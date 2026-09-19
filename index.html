@@ -865,14 +865,14 @@ const COLS = {
     { key: 'vatPct', label: 'מע״מ %', type: 'pct' },
     { key: 'vatAmt', label: 'מע״מ', type: 'computed', money: true },
     { key: 'total', label: 'כולל מע״מ', type: 'computed', money: true },
-    { key: 'offset', label: 'תוספת / קיזוז', type: 'adjust', money: true },
+    { key: 'offset', label: 'תוספת / קיזוז', hint: 'ללא מע״מ', type: 'adjust', money: true },
     { key: 'base', label: 'לתשלום', type: 'computed', money: true },
     { key: 'submitted', label: 'הוגש', type: 'date' },
     { key: 'term', label: 'צפי תשלום', type: 'term' },
     { key: 'moneyDate', label: 'קבלת הכסף', type: 'dateAuto' },
     { key: 'paid', label: 'שולם', type: 'paidStatus' },
     { key: 'supplierPct', label: '% ספק', type: 'pct' },
-    { key: 'supAdj', label: 'תוספת/קיזוז ספק', type: 'adjust', addKey: 'supAdd', dedKey: 'supDed', money: true, sup: true },
+    { key: 'supAdj', label: 'תוספת/קיזוז ספק', hint: 'ללא מע״מ', type: 'adjust', addKey: 'supAdd', dedKey: 'supDed', money: true, sup: true },
     { key: 'supplierPay', label: 'תשלום לספק', type: 'numAuto', money: true, sup: true },
     { key: 'supplierDocNo', label: 'ח.מ.ק ספק', type: 'supdoc', sup: true },
     { key: 'supplierDocDate', label: 'ת. ח. ספק', type: 'date', sup: true },
@@ -900,11 +900,11 @@ const COLS = {
     { key: 'submitted', label: 'הוגש', type: 'date' },
     { key: 'term', label: 'צפי תשלום', type: 'term' },
     { key: 'moneyDate', label: 'קבלת הכסף', type: 'dateAuto' },
-    { key: 'offset', label: 'תוספת / קיזוז', type: 'adjust', money: true },
+    { key: 'offset', label: 'תוספת / קיזוז', hint: 'ללא מע״מ', type: 'adjust', money: true },
     { key: 'base', label: 'לתשלום', type: 'computed', money: true },
     { key: 'paid', label: 'שולם', type: 'paidStatus' },
     { key: 'supplierPct', label: '% ספק', type: 'pct' },
-    { key: 'supAdj', label: 'תוספת/קיזוז ספק', type: 'adjust', addKey: 'supAdd', dedKey: 'supDed', money: true, sup: true },
+    { key: 'supAdj', label: 'תוספת/קיזוז ספק', hint: 'ללא מע״מ', type: 'adjust', addKey: 'supAdd', dedKey: 'supDed', money: true, sup: true },
     { key: 'supplierPay', label: 'תשלום לספק', type: 'numAuto', money: true, sup: true },
     { key: 'supplierDocNo', label: 'ח.מ.ק ספק', type: 'supdoc', sup: true },
     { key: 'supplierDocDate', label: 'ת. ח. ספק', type: 'date', sup: true },
@@ -924,7 +924,7 @@ const COLS = {
     { key: 'vatPct', label: 'מע״מ %', type: 'pct' },
     { key: 'vatAmt', label: 'מע״מ', type: 'computed', money: true },
     { key: 'total', label: 'כולל מע״מ', type: 'computed', money: true },
-    { key: 'offset', label: 'תוספת / קיזוז', type: 'adjust', money: true },
+    { key: 'offset', label: 'תוספת / קיזוז', hint: 'ללא מע״מ', type: 'adjust', money: true },
     { key: 'base', label: 'לתשלום', type: 'computed', money: true },
     { key: 'submitted', label: 'הוגש', type: 'date' },
     { key: 'term', label: 'צפי תשלום', type: 'term' },
@@ -1036,10 +1036,13 @@ const TOGGLE_LABELS = { supplierPaid: ['טרם שולם', 'שולם'], status: [
 const OVERRIDABLE_NUM = { yazam: ['supplierPay'], mod: ['kmMonth', 'total', 'supplierPay'], regular: [], freelancer: [] };
 const FORMULA = {
   'mod.total': 'לפני מע״מ × (1 + מע״מ%)',
+  'yazam.base': 'כולל מע״מ + (תוספת − קיזוז) × (1 + מע״מ%)',
+  'mod.base': 'כולל מע״מ + (תוספת − קיזוז) × (1 + מע״מ%)',
+  'regular.base': 'כולל מע״מ + (תוספת − קיזוז) × (1 + מע״מ%)',
   'mod.kmMonth': 'כמות ימים × ק״מ ליום',
   'freelancer.total': 'סכום ללא מע״מ × (1 + מע״מ%)',
-  'yazam.supplierPay': 'סה״כ כולל מע״מ × (1 − אחוז גבייה%) + תוספת לספק − קיזוז לספק',
-  'mod.supplierPay': 'כולל מע״מ × (1 − אחוז גבייה%) + תוספת לספק − קיזוז לספק'
+  'yazam.supplierPay': 'סה״כ כולל מע״מ × (1 − אחוז גבייה%) + (תוספת לספק − קיזוז לספק) × (1 + מע״מ%)',
+  'mod.supplierPay': 'כולל מע״מ × (1 − אחוז גבייה%) + (תוספת לספק − קיזוז לספק) × (1 + מע״מ%)'
 };
 
 /* ---------------- tabs ---------------- */
@@ -1163,7 +1166,10 @@ function calcRow(kind, row) {
       pick('total', r2(c.preVat * (1 + vat / 100)));
       c.total = nz(c.total);
     }
-    c.base = r2(c.total + rowOffset(row));
+    // תוספת / קיזוז מוזנים תמיד כסכום ללא מע״מ, ולכן מתווסף להם מע״מ לפני שהם משפיעים על התשלום
+    c.offNet = rowOffset(row);
+    c.offGross = r2(c.offNet * (1 + vat / 100));
+    c.base = r2(c.total + c.offGross);
     // צפי התשלום נגזר תמיד מתאריך ההגשה + תנאי התשלום (למשל 30/05 + 45)
     if (row.term === 'manual') c.expectedDate = row.expectedManual || '';
     else c.expectedDate = (row.submitted && row.term) ? addDays(row.submitted, row.term) : '';
@@ -1175,8 +1181,10 @@ function calcRow(kind, row) {
     if (c.supplierOn) {
       const pct = num(row.supplierPct);
       // תוספת/קיזוז של הלקוח לא עוברים לספק אוטומטית; התאמה לספק מוזנת בתא "תוספת / קיזוז לספק"
+      // גם כאן הסכום מוזן ללא מע״מ, ומתווסף לו מע״מ לפני שהוא משפיע על התשלום לספק
       c.supAdjNet = adjNet(row, 'supAdd', 'supDed');
-      pick('supplierPay', pct === null ? null : r2(c.total * (1 - pct / 100) + c.supAdjNet));
+      c.supAdjGross = r2(c.supAdjNet * (1 + vat / 100));
+      pick('supplierPay', pct === null ? null : r2(c.total * (1 - pct / 100) + c.supAdjGross));
       if (c.supplierPay !== null && c.supplierPay !== undefined) c.supplierPay = num(c.supplierPay);
       pick('supplierPayDate', c.moneyDate ? addDays(c.moneyDate, offsetDays) : '');
       c.supplierPayDateForecast = c.supplierPayDate || (c.expectedDate ? addDays(c.expectedDate, offsetDays) : '');
@@ -1573,7 +1581,9 @@ function cellHTML(t, col, row, c) {
       const ra = 'data-row="' + row.id + '"', ak = col.addKey || 'offAdd', dk = col.dedKey || 'offDed', forSup = !!col.addKey;
       const a = row[ak] == null ? '' : fmtMoney(Math.abs(num(row[ak]))), d = row[dk] == null ? '' : fmtMoney(Math.abs(num(row[dk])));
       const net = forSup ? adjNet(row, ak, dk) : rowOffset(row);
-      return td('<div class="adj' + (forSup ? ' sup' : '') + '" title="' + (forSup ? 'מתווסף/מקוזז ישירות מהתשלום לספק' : 'משנה את הסכום שאטלס מקבלת בלבד') + ' · נטו: ' + fmtMoney(net) + '">' +
+      // הסכומים מוזנים ללא מע״מ; ההשפעה בפועל על התשלום היא נטו × (1 + מע״מ%)
+      const gross = r2(net * (1 + nz(row.vatPct) / 100));
+      return td('<div class="adj' + (forSup ? ' sup' : '') + '" title="' + (forSup ? 'מתווסף/מקוזז ישירות מהתשלום לספק' : 'משנה את הסכום שאטלס מקבלת בלבד') + ' · מוזן ללא מע״מ · נטו: ' + fmtMoney(net) + ' · בתשלום (כולל מע״מ): ' + fmtMoney(gross) + '">' +
         '<label class="ln add"><span class="sg">+</span><input class="cell num" type="text" inputmode="decimal" placeholder="' + (forSup ? 'תוספת לספק' : 'תוספת') + '" value="' + esc(a) + '" data-type="num" ' + ra + ' data-key="' + ak + '"></label>' +
         '<label class="ln ded"><span class="sg">−</span><input class="cell num" type="text" inputmode="decimal" placeholder="' + (forSup ? 'קיזוז מהספק' : 'קיזוז') + '" value="' + esc(d) + '" data-type="num" ' + ra + ' data-key="' + dk + '"></label></div>');
     }
@@ -1693,7 +1703,9 @@ function gridHTML(t, items, opt) {
     const lbl = opt && opt.sortAct
       ? '<a href="#" class="sort-h" data-act="' + opt.sortAct + '" data-key="' + col.key + '" title="מיון לפי עמודה זו">' + esc(col.label) + (so && so.key === col.key ? (so.dir === 'asc' ? ' ▲' : ' ▼') : '') + '</a>'
       : esc(col.label);
-    h += '<th class="' + (col.type === 'serial' ? 'sticky-r' : '') + '">' + lbl + ' <button class="fbtn' + on + '" data-act="filter" data-key="' + col.key + '" title="סינון">▼</button></th>';
+    // רמז קצר מתחת לכותרת (למשל "ללא מע״מ" בעמודות תוספת/קיזוז) – אינו מרחיב את העמודה
+    const hint = col.hint ? '<span style="display:block;font-size:10px;font-weight:400;opacity:.65">' + esc(col.hint) + '</span>' : '';
+    h += '<th class="' + (col.type === 'serial' ? 'sticky-r' : '') + '">' + lbl + ' <button class="fbtn' + on + '" data-act="filter" data-key="' + col.key + '" title="סינון">▼</button>' + hint + '</th>';
   }
   h += '<th></th></tr></thead><tbody>';
   if (!items.length) {
@@ -1732,14 +1744,14 @@ function summariesHTML(t, items) {
       h += statHTML('מע״מ', fmtMoney(sum(x => x.c.vatAmt)));
     }
     h += statHTML('כולל מע״מ', fmtMoney(sum(x => x.c.total)), 'gold');
-    h += statHTML('תוספות', '<span style="color:var(--green)">' + fmtMoney(sum(x => Math.abs(nz(x.row.offAdd)))) + '</span>');
-    h += statHTML('קיזוזים', '<span style="color:var(--red)">' + fmtMoney(sum(x => Math.abs(nz(x.row.offDed)))) + '</span>');
+    h += statHTML('תוספות (ללא מע״מ)', '<span style="color:var(--green)">' + fmtMoney(sum(x => Math.abs(nz(x.row.offAdd)))) + '</span>');
+    h += statHTML('קיזוזים (ללא מע״מ)', '<span style="color:var(--red)">' + fmtMoney(sum(x => Math.abs(nz(x.row.offDed)))) + '</span>');
     h += statHTML('התקבל', fmtMoney(sum(x => x.c.paid ? x.c.base : 0)), 'green');
     h += statHTML('טרם התקבל', fmtMoney(sum(x => x.c.paid ? 0 : x.c.base)), 'red');
     if (sup) {
       h += statHTML('תשלום לספקים', fmtMoney(sum(x => x.c.supplierPay)));
       const sa = sum(x => x.c.supplierOn ? Math.abs(nz(x.row.supAdd)) : 0), sd = sum(x => x.c.supplierOn ? Math.abs(nz(x.row.supDed)) : 0);
-      if (sa || sd) h += statHTML('התאמות לספק', '<span style="color:var(--green)">+' + fmtMoney(sa) + '</span> <span style="color:var(--red)">−' + fmtMoney(sd) + '</span>');
+      if (sa || sd) h += statHTML('התאמות לספק (ללא מע״מ)', '<span style="color:var(--green)">+' + fmtMoney(sa) + '</span> <span style="color:var(--red)">−' + fmtMoney(sd) + '</span>');
       h += statHTML('טרם שולם לספק', fmtMoney(sum(x => x.row.supplierPaid ? 0 : x.c.supplierPay)), 'red');
       h += statHTML('נטו לאטלס', fmtMoney(sum(x => x.c.atlasNet)), 'green');
     }
@@ -2318,9 +2330,13 @@ async function readPdfDate(file) {
 /* לאיזה שדה תאריך בשורה שייך המסמך */
 function docDateTarget(t, field) {
   if (['yazam', 'mod', 'regular'].includes(t.kind)) {
-    // מסמכי אטלס: תאריך המסמך נכתב ל״הוגש״, וצפי התשלום נגזר ממנו + תנאי התשלום (למשל +45)
-    if (['dealNo', 'taxInvNo', 'taxReceiptNo', 'receiptNo'].includes(field))
+    // ח. עסקה / ח. מס – מסמכי הגשה: תאריך המסמך נכתב ל״הוגש״, וצפי התשלום נגזר ממנו + תנאי התשלום (למשל +45)
+    if (['dealNo', 'taxInvNo'].includes(field))
       return { key: 'submitted', label: 'הוגש', ov: false };
+    // ח. מס קבלה / קבלה – מסמכי קבלת כסף: התאריך שבמסמך הוא יום קבלת הכסף בפועל, ולכן הוא
+    // נכתב כדריסה ידנית ל״קבלת הכסף״ במקום להיגזר כצפי (הוגש + תנאי תשלום). ״הוגש״ ימולא רק אם ריק.
+    if (['taxReceiptNo', 'receiptNo'].includes(field))
+      return { key: 'moneyDate', label: 'קבלת הכסף', ov: true, also: { key: 'submitted', label: 'הוגש' } };
     // מסמך הספק: התאריך נרשם לתיעוד בלבד ("תאריך ח. ספק"). התשלום בפועל לספק
     // יוצא ביום שאטלס קיבלה את הכסף, ולכן אין לגעת ב"תאריך תשלום לספק" שמניע את התזרים.
     if (field === 'supplierDocNo') return { key: 'supplierDocDate', label: 'תאריך ח. ספק', ov: false };
@@ -2361,16 +2377,42 @@ async function handlePdfFiles(t, files) {
   else if (!path) where = '<div class="msg err">לא הוגדר נתיב מסמכים לחוצץ – הקבצים יקושרו אך לא יישמרו. הגדר נתיב ונסה שוב.</div>';
   else if (!DocFS.root) where = '<div class="msg warn">בלחיצה על ״שמור וקשר״ ייפתח חלון בחירת תיקייה: בחר תיקייה שמופיעה בנתיב <b dir="ltr">' + esc(path) + '</b>. הבחירה נדרשת פעם אחת בלבד.</div>';
   else { const r = DocFS.resolve(path); where = r.ok ? '<div class="msg info">הקבצים יישמרו אל: <b>' + esc(DocFS.displayTarget(path)) + '</b> (תיקיות חסרות ייווצרו)</div>' : '<div class="msg err">' + esc(r.error) + '</div>'; }
-  const tgt0 = docDateTarget(t, dfields[0].key);
-  const body = where + '<p>בחר לאיזו שורה ולאיזה מספר מסמך לקשר כל קובץ. התאמה אוטומטית בוצעה לפי מספרים בשם הקובץ, ותאריך המסמך נקרא מתוך ה-PDF.</p><table class="simple"><tr><th>קובץ</th><th>שורה</th><th>שדה מסמך</th><th>מספר מסמך</th><th>תאריך המסמך</th></tr>' +
+  const body = where + '<p>בחר לאיזו שורה ולאיזה מספר מסמך לקשר כל קובץ. התאמה אוטומטית בוצעה לפי מספרים בשם הקובץ, ותאריך המסמך נקרא מתוך ה-PDF.</p><table class="simple"><tr><th>קובץ</th><th>שורה</th><th>שדה מסמך</th><th>מספר מסמך</th><th>תאריך המסמך</th><th>יעד התאריך בשורה</th></tr>' +
     files.map((f, i) => '<tr data-i="' + i + '"><td>' + esc(f.name) + (matches[i].rowId ? ' <span class="status yes">הותאם</span>' : '') + '</td><td><select class="lr">' + rowOpts(matches[i].rowId) + '</select></td><td><select class="lf">' + fieldOpts(matches[i].field) + '</select></td><td><input class="ln" type="text" value="' + esc(matches[i].number) + '" style="width:110px;direction:ltr"></td>' +
-      '<td><input class="ld" type="text" value="' + esc(dates[i] ? fmtDate(dates[i]) : '') + '" placeholder="dd/mm/yyyy" style="width:110px;direction:ltr"' + (dates[i] ? ' title="נקרא אוטומטית מהמסמך"' : '') + '>' + (dates[i] ? ' <span class="status yes">זוהה</span>' : ' <span class="muted">לא זוהה</span>') + '</td></tr>').join('') + '</table>' +
+      '<td><input class="ld" type="text" value="' + esc(dates[i] ? fmtDate(dates[i]) : '') + '" placeholder="dd/mm/yyyy" style="width:110px;direction:ltr"' + (dates[i] ? ' title="נקרא אוטומטית מהמסמך"' : '') + '>' + (dates[i] ? ' <span class="status yes">זוהה</span>' : ' <span class="muted">לא זוהה</span>') + '</td><td class="lt"></td></tr>').join('') + '</table>' +
     '<p class="muted" style="font-size:12px">אם השדה בשורה ריק – המספר שהוזן כאן ייכתב אליו. אם השדה כבר מכיל מספר – הקובץ יקושר למספר הקיים.<br>' +
-    'תאריך המסמך ייכתב אוטומטית לשדה התאריך המתאים בשורה' + (tgt0 ? ' (לדוגמה: ' + esc(tgt0.label) + ')' : '') + ' – רק אם הוא ריק. אפשר לתקן או למחוק את התאריך כאן.</p>';
+    '<b>ח. מס קבלה / קבלה</b> – תאריך המסמך הוא יום קבלת הכסף בפועל ולכן הוא נכתב ל״קבלת הכסף״ (ולא כצפי לפי תנאי התשלום); אם ״הוגש״ ריק הוא ימולא באותו תאריך.<br>' +
+    '<b>ח. עסקה / ח. מס</b> – התאריך נכתב ל״הוגש״, וצפי התשלום נגזר ממנו. עמודת ״יעד התאריך בשורה״ מראה לאן ייכתב, ומציעה סימון דריסה כשכבר קיים תאריך אחר.</p>';
   openModal({
     title: 'שמירה וקישור מסמכי PDF – ' + t.name, body, wide: true,
-    buttons: [{ label: 'שמור וקשר', cls: 'primary', id: 'pdfCommit', onClick: bg => { commitPdfLinks(t, files, bg); return false; } }, { label: 'ביטול' }]
+    buttons: [{ label: 'שמור וקשר', cls: 'primary', id: 'pdfCommit', onClick: bg => { commitPdfLinks(t, files, bg); return false; } }, { label: 'ביטול' }],
+    onOpen: bg => {
+      const refresh = () => $$('tr[data-i]', bg).forEach(tr => pdfTargetCell(t, tr));
+      $$('tr[data-i]', bg).forEach(tr => ['.lr', '.lf', '.ld'].forEach(s => {
+        const el = $(s, tr); if (!el) return;
+        el.addEventListener('change', refresh); el.addEventListener('input', refresh);
+      }));
+      refresh();
+    }
   });
+}
+/* עמודת "יעד התאריך בשורה" בחלון קישור המסמכים: לאן ייכתב תאריך המסמך, והאם יש התנגשות */
+function pdfTargetCell(t, tr) {
+  const cell = $('.lt', tr); if (!cell) return;
+  const rowId = $('.lr', tr).value, field = $('.lf', tr).value;
+  const row = t.rows.find(r => r.id === rowId);
+  const tgt = row ? docDateTarget(t, field) : null;
+  const raw = ($('.ld', tr) ? $('.ld', tr).value : '').trim();
+  const iso = raw ? parseDateInput(raw) : '';
+  if (!tgt) { cell.innerHTML = '<span class="muted">—</span>'; tr.dataset.ov = ''; return; }
+  const cur = rowDateValue(row, tgt);
+  if (!iso) { cell.innerHTML = esc(tgt.label) + ' <span class="muted">(אין תאריך במסמך)</span>'; tr.dataset.ov = ''; return; }
+  if (!cur) { cell.innerHTML = esc(tgt.label) + ' <span class="status yes">ריק – ייכתב</span>'; tr.dataset.ov = ''; return; }
+  if (cur === iso) { cell.innerHTML = esc(tgt.label) + ' <span class="muted">זהה (' + fmtDate(cur) + ')</span>'; tr.dataset.ov = ''; return; }
+  const on = tr.dataset.ov === '1';
+  cell.innerHTML = esc(tgt.label) + ' <span class="status no">קיים ' + fmtDate(cur) + '</span><br>' +
+    '<label style="font-size:12px;cursor:pointer"><input type="checkbox" class="lo"' + (on ? ' checked' : '') + '> דרוס ל-' + fmtDate(iso) + '</label>';
+  $('.lo', cell).addEventListener('change', e => { tr.dataset.ov = e.target.checked ? '1' : ''; });
 }
 async function commitPdfLinks(t, files, bg) {
   const btn = $('#pdfCommit', bg); if (btn) { btn.disabled = true; btn.textContent = 'שומר…'; }
@@ -2384,7 +2426,7 @@ async function commitPdfLinks(t, files, bg) {
     const dRaw = ($('.ld', tr) ? $('.ld', tr).value : '').trim();
     const docDate = dRaw ? parseDateInput(dRaw) : '';
     if (dRaw && !docDate) { toast('תאריך מסמך לא תקין עבור ' + files[i].name, 'err'); return; }
-    picks.push({ file: files[i], row, field, number: cur || number, docDate: docDate || '', note: cur && number && cur !== number ? 'קושר למספר הקיים ' + cur : '' });
+    picks.push({ file: files[i], row, field, number: cur || number, docDate: docDate || '', override: tr.dataset.ov === '1', note: cur && number && cur !== number ? 'קושר למספר הקיים ' + cur : '' });
   }
   if (!picks.length) { closeModal(); return; }
   // חיבור תיקייה והרשאה – חייבים לקרות מיד בתגובה ללחיצה
@@ -2406,11 +2448,23 @@ async function commitPdfLinks(t, files, bg) {
     // תאריך המסמך → שדה התאריך המתאים בשורה (רק אם ריק)
     if (p.docDate) {
       const tgt = docDateTarget(t, p.field);
-      if (tgt && !rowDateValue(p.row, tgt)) {
-        setRowDate(p.row, tgt, p.docDate);
-        notes.push(p.file.name + ': ' + tgt.label + ' עודכן ל-' + fmtDate(p.docDate) + ' לפי תאריך המסמך');
+      if (tgt) {
+        const cur = rowDateValue(p.row, tgt);
+        if (!cur) {
+          setRowDate(p.row, tgt, p.docDate);
+          notes.push(p.file.name + ': ' + tgt.label + ' עודכן ל-' + fmtDate(p.docDate) + ' לפי תאריך המסמך');
+        } else if (cur !== p.docDate && p.override) {
+          setRowDate(p.row, tgt, p.docDate);
+          notes.push(p.file.name + ': ' + tgt.label + ' נדרס מ-' + fmtDate(cur) + ' ל-' + fmtDate(p.docDate) + ' לפי תאריך המסמך');
+        } else if (cur !== p.docDate) {
+          notes.push(p.file.name + ': ' + tgt.label + ' נשאר ' + fmtDate(cur) + ' – לא נדרס');
+        }
+        // ״הוגש״ אחרי מסמך קבלה: ממולא רק אם הוא ריק, כדי שלשורה יהיה תאריך הגשה ולא תיפול בהתראות
+        if (tgt.also && !p.row[tgt.also.key]) {
+          p.row[tgt.also.key] = p.docDate;
+          notes.push(p.file.name + ': ' + tgt.also.label + ' היה ריק ומולא ב-' + fmtDate(p.docDate));
+        }
       }
-      if (tgt && tgt.also && !p.row[tgt.also.key]) p.row[tgt.also.key] = p.docDate;
     }
     const old = findDoc(t.tabId, p.row.id, p.field);
     if (old) delete S.docs[old.id];
