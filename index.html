@@ -701,6 +701,8 @@ function defaultState() {
     settings: {
       openingBalance: 0, openingDate: '', vatDefault: 18, kmRate: 1.4,
       supplierPayOffsetDays: 0, salaryDateRule: 'payDate', includeForecast: true, autosave: true,
+      // כמה ימים לפני סיום תוקף הזמנה להתחיל להתריע (ניתן לשינוי גם בכל הזמנה בנפרד)
+      orderAlertDays: 30,
       bankFee: { startMonth: '', history: [{ from: '0000-00', amount: 26 }], generated: {} },
       bankTxTypes: BANK_TX_TYPES.slice(),
       // קבוצות שמות של אותו אדם (השם הראשון הוא השם הראשי)
@@ -1125,6 +1127,39 @@ function colDataCount(t, col) {
   }).length;
 }
 function entitySupplierForNewRows(e) { return e.supplierForNewRows === undefined ? num(e.supplierPctDefault) !== null : !!e.supplierForNewRows; }
+
+/* ---------------- הזמנות עבודה (משהב״ט) ---------------- */
+/* לכל פרויקט רשימת הזמנות: מספר, תוקף, תקרה כספית (ללא מע״מ) והתראה מוקדמת.
+   הניצול נגזר מהשורות בפרויקט שנושאות את אותו מספר הזמנה – אין הזנה כפולה. */
+function entityOrders(e) { return Array.isArray(e.orders) ? e.orders : (e.orders = []); }
+function orderLeadDays(o) { const d = num(o && o.leadDays); return d === null ? (num(S.settings.orderAlertDays) === null ? 30 : nz(S.settings.orderAlertDays)) : d; }
+function orderUsage(e, no) {
+  const key = String(no || '').trim();
+  let used = 0, rows = 0;
+  if (!key) return { used: 0, rows: 0 };
+  for (const r of (e.rows || [])) {
+    if (String(r.orderNo || '').trim() !== key) continue;
+    const c = calcRow(e.type, r);
+    used = r2(used + nz(e.type === 'mod' ? c.preVat : c.netAdj));
+    rows++;
+  }
+  return { used, rows };
+}
+function orderStatus(e, o) {
+  const u = orderUsage(e, o.no);
+  const ceiling = num(o.ceiling);
+  const lead = orderLeadDays(o);
+  const daysLeft = o.until ? Math.round((new Date(o.until) - new Date(todayISO())) / 86400000) : null;
+  const left = ceiling === null ? null : r2(ceiling - u.used);
+  const pct = (ceiling !== null && ceiling > 0) ? Math.round(u.used / ceiling * 100) : null;
+  return {
+    used: u.used, rows: u.rows, ceiling, left, pct, daysLeft, lead,
+    expired: daysLeft !== null && daysLeft < 0,
+    expiring: daysLeft !== null && daysLeft >= 0 && daysLeft <= lead,
+    overCeiling: left !== null && left < 0,
+    nearCeiling: pct !== null && pct >= 85 && left >= 0
+  };
+}
 function newRow(kind, entity) {
   const d = new Date();
   const base = { id: uid('r'), year: String(d.getFullYear()), month: pad2(d.getMonth() + 1), ov: {} };
@@ -2170,6 +2205,9 @@ function renderTab(v, t) {
   if (t.kind === 'bank') items = items.slice().sort((a, b) => String(a.row.date || '').localeCompare(String(b.row.date || '')) || nz(a.row.serial) - nz(b.row.serial));
   // חוצץ אדם: השורות האחרונות בראש הטבלה
   if (t.kind === 'freelancer') items = items.slice().sort((a, b) => (String(b.row.year || '') + String(b.row.month || '')).localeCompare(String(a.row.year || '') + String(a.row.month || '')) || nz(b.row.serial) - nz(a.row.serial));
+  // פרויקט שסומן "חדש → ישן": השורה האחרונה שהוזנה נמצאת בראש הטבלה והשאר יורדות
+  if (PROJECT_TYPES.includes(t.kind) && t.entity && t.entity.rowOrder === 'desc')
+    items = items.slice().sort((a, b) => (String(b.row.year || '') + String(b.row.month || '')).localeCompare(String(a.row.year || '') + String(a.row.month || '')) || nz(b.row.serial) - nz(a.row.serial));
   const e = t.entity;
   let h = '<div class="crumb"' + (['yazam', 'mod'].includes(t.kind) ? ' data-ptype="' + t.kind + '"' : '') + '><h2>' + esc(t.name) + '</h2><span class="meta">' + (t.isOps ? 'תפעול · חוצץ מערכת קבוע' : TYPE_LABEL[t.kind] + (e.client ? ' · לקוח: ' + esc(e.client) : '') + (e.owner ? ' · אחראי: ' + esc(e.owner) : '') + (PROJECT_TYPES.includes(t.kind) && num(e.termDays) !== null ? ' · תנאי תשלום +' + esc(e.termDays) : '') + (['yazam', 'mod'].includes(t.kind) && num(e.supplierPctDefault) !== null ? ' · גבייה מספק ' + esc(e.supplierPctDefault) + '%' : '') + ' · מזהה ' + esc(e.id)) + '</span><span class="grow"></span>';
   if (!t.isOps) h += '<button class="btn sm" data-act="editent">✎ פרטי חוצץ</button><button class="btn sm danger" data-act="delent">🗑 מחיקת חוצץ</button>';
@@ -2180,18 +2218,117 @@ function renderTab(v, t) {
     '<button class="btn" data-act="clearf"' + (Object.values(tabFilters(t.tabId)).some(Boolean) ? '' : ' disabled') + '>✖ ניקוי מסננים</button>';
   if (t.kind === 'yazam' || t.kind === 'mod') { const on = entitySupplierForNewRows(e); h += '<button class="btn" data-act="supdefault" title="קובע אם שורה חדשה תיפתח עם ספק או בלי. שורות קיימות לא משתנות.">שורות חדשות: <span class="status ' + (on ? 'yes' : 'fc') + '">' + (on ? 'עם ספק' + (num(e.supplierPctDefault) !== null ? ' ' + e.supplierPctDefault + '%' : '') : 'ללא ספק') + '</span></button>'; }
   if (!t.isOps) { const nh = hiddenColsOf(e).length; h += '<button class="btn" data-act="colpick" title="בחירת העמודות שיוצגו בחוצץ הזה">👁 עמודות' + (nh ? ' <span class="status fc">' + nh + ' מוסתרות</span>' : '') + '</button>'; }
+  if (PROJECT_TYPES.includes(t.kind)) { const desc = e.rowOrder === 'desc'; h += '<button class="btn" data-act="roworder" title="היפוך סדר השורות בחוצץ זה. ב״חדש → ישן״ שורה חדשה נכנסת לראש הטבלה והשאר יורדות.">⇅ סדר: <span class="status ' + (desc ? 'yes' : 'fc') + '">' + (desc ? 'חדש → ישן' : 'ישן → חדש') + '</span></button>'; }
+  if (t.kind === 'mod') { const no = entityOrders(e).length; h += '<button class="btn" data-act="orders" title="ניהול הזמנות העבודה של הפרויקט – מספר, תוקף ותקרה">📄 הזמנות' + (no ? ' <span class="status fc">' + no + '</span>' : '') + '</button>'; }
   if (t.kind === 'mod') { const onO = entityFlag(e, 'hasOffroad'); h += '<button class="btn" data-act="offroadtoggle" title="הצגה או הסתרה של עמודת רכב שטח בפרויקט זה">רכב שטח: <span class="status ' + (onO ? 'yes' : 'fc') + '">' + (onO ? 'מוצג' : 'מוסתר') + '</span></button>'; }
   if (t.kind === 'salaries' || t.kind === 'pensions') h += '<button class="btn" data-act="employees">👥 ניהול עובדים (' + S.employees.length + ')</button>';
   if (t.kind === 'credit') h += '<button class="btn gold" data-act="ccimport">📥 יבוא קובץ FIBI / Excel</button>';
   if (t.kind === 'bank') h += '<button class="btn" data-act="banksettings">⚙ הגדרת עמלה חודשית</button>';
   h += '</div>';
   if (t.kind === 'bank') h += bankDepositHTML() + bankFeeBannerHTML();
+  if (t.kind === 'mod') h += ordersPanelHTML(t);
   h += summariesHTML(t, items);
   h += docBarHTML(t);
   if (t.kind === 'freelancer') h += '<div class="layout-side"><div class="main-col">' + gridHTML(t, items) + '</div>' + yearPanelHTML(t, items) + '</div>';
   else if (t.kind === 'bank') h += gridHTML(t, items, { rowClass: (row, c) => c.fromAuth ? 'viabank' : '' });
   else h += gridHTML(t, items);
   v.innerHTML = yearsDatalist() + (t.kind === 'bank' ? bankPartyList() : '') + '<div id="msgs"></div>' + h;
+}
+/* ---------------- הזמנות עבודה – לוח מעל הטבלה (משהב״ט) ---------------- */
+function orderCardHTML(e, o) {
+  const s = orderStatus(e, o);
+  let badge, cls;
+  if (s.expired) { badge = 'פג תוקף לפני ' + Math.abs(s.daysLeft) + ' ימים'; cls = 'err'; }
+  else if (s.expiring) { badge = 'נותרו ' + s.daysLeft + ' ימים'; cls = 'warn'; }
+  else if (s.daysLeft !== null) { badge = 'בתוקף · ' + s.daysLeft + ' ימים'; cls = 'ok'; }
+  else { badge = 'ללא תאריך תוקף'; cls = 'fc'; }
+  const color = { err: 'var(--red)', warn: 'var(--gold, #b8860b)', ok: 'var(--green)', fc: 'var(--muted, #777)' }[cls];
+  let money = '';
+  if (s.ceiling !== null) {
+    const mcls = s.overCeiling ? 'var(--red)' : (s.nearCeiling ? 'var(--gold, #b8860b)' : 'var(--green)');
+    const bar = Math.max(0, Math.min(100, s.pct === null ? 0 : s.pct));
+    money = '<div style="margin-top:6px;font-size:12px">נוצל ' + fmtMoney(s.used) + ' מתוך ' + fmtMoney(s.ceiling) +
+      ' ₪ (ללא מע״מ) · <b style="color:' + mcls + '">' + (s.overCeiling ? 'חריגה ' + fmtMoney(Math.abs(s.left)) : 'יתרה ' + fmtMoney(s.left)) + ' ₪</b>' +
+      (s.pct !== null ? ' · ' + s.pct + '%' : '') + '</div>' +
+      '<div style="height:6px;border-radius:3px;background:#e6e6ee;margin-top:4px;overflow:hidden"><div style="height:100%;width:' + bar + '%;background:' + mcls + '"></div></div>';
+  } else {
+    money = '<div style="margin-top:6px;font-size:12px" class="muted">נוצל ' + fmtMoney(s.used) + ' ₪ (ללא מע״מ) ב-' + s.rows + ' שורות · לא הוגדרה תקרה</div>';
+  }
+  return '<div style="flex:1 1 260px;min-width:240px;border:1px solid #d8d8e4;border-right:4px solid ' + color + ';border-radius:8px;padding:8px 10px;background:#fff">' +
+    '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><b dir="ltr" style="direction:ltr">' + esc(o.no || '(ללא מספר)') + '</b>' +
+    '<span class="status ' + (cls === 'ok' ? 'yes' : (cls === 'err' ? 'no' : 'fc')) + '" style="color:' + color + '">' + esc(badge) + '</span></div>' +
+    '<div style="font-size:12px;margin-top:2px" class="muted">' + (o.from ? 'מ-' + fmtDate(o.from) + ' ' : '') + (o.until ? 'עד ' + fmtDate(o.until) : '') + ' · התראה ' + s.lead + ' ימים לפני' + (s.rows ? ' · ' + s.rows + ' שורות' : '') + '</div>' +
+    money + (o.notes ? '<div style="font-size:12px;margin-top:4px">' + esc(o.notes) + '</div>' : '') + '</div>';
+}
+function ordersPanelHTML(t) {
+  const e = t.entity, list = entityOrders(e);
+  const unknown = [...new Set((e.rows || []).map(r => String(r.orderNo || '').trim()).filter(Boolean))]
+    .filter(no => !list.some(o => String(o.no || '').trim() === no));
+  let h = '<div style="margin-bottom:10px">';
+  if (!list.length) {
+    h += '<div class="msg info">לא הוגדרו הזמנות עבודה לפרויקט זה. בלחיצה על <b>📄 הזמנות</b> אפשר להזין מספר הזמנה, תוקף ותקרה – ולקבל התראה לפני שהתוקף נגמר.' +
+      (unknown.length ? ' בשורות כבר מופיעים המספרים: <b dir="ltr">' + unknown.map(esc).join('</b>, <b dir="ltr">') + '</b>.' : '') + '</div>';
+    return h + '</div>';
+  }
+  h += '<div style="display:flex;gap:8px;flex-wrap:wrap">' + list.map(o => orderCardHTML(e, o)).join('') + '</div>';
+  if (unknown.length) h += '<div class="msg warn" style="margin-top:6px">מספרי הזמנה שמופיעים בשורות אך לא הוגדרו למעלה: <b dir="ltr">' + unknown.map(esc).join('</b>, <b dir="ltr">') + '</b> – הניצול שלהם אינו נספר.</div>';
+  return h + '</div>';
+}
+function ordersModal(t) {
+  const e = t.entity;
+  const seen = [...new Set((e.rows || []).map(r => String(r.orderNo || '').trim()).filter(Boolean))];
+  const rowHTML = o => '<tr data-oid="' + esc(o.id) + '">' +
+    '<td><input class="on" type="text" value="' + esc(o.no || '') + '" list="ordSeen" style="width:130px;direction:ltr"></td>' +
+    '<td><input class="of" type="text" value="' + esc(o.from ? fmtDate(o.from) : '') + '" placeholder="dd/mm/yyyy" style="width:110px;direction:ltr"></td>' +
+    '<td><input class="ou" type="text" value="' + esc(o.until ? fmtDate(o.until) : '') + '" placeholder="dd/mm/yyyy" style="width:110px;direction:ltr"></td>' +
+    '<td><input class="oc" type="text" inputmode="decimal" value="' + esc(o.ceiling == null ? '' : fmtMoney(o.ceiling)) + '" placeholder="ללא" style="width:110px;direction:ltr"></td>' +
+    '<td><input class="ol" type="text" inputmode="numeric" value="' + esc(o.leadDays == null ? '' : o.leadDays) + '" placeholder="' + (nz(S.settings.orderAlertDays) || 30) + '" style="width:60px;direction:ltr"></td>' +
+    '<td><input class="ot" type="text" value="' + esc(o.notes || '') + '" style="width:150px"></td>' +
+    '<td><button class="btn sm danger" data-orddel="' + esc(o.id) + '">🗑</button></td></tr>';
+  const body = '<datalist id="ordSeen">' + seen.map(s => '<option value="' + esc(s) + '">').join('') + '</datalist>' +
+    '<p>ההזמנות של <b>' + esc(t.name) + '</b>. הניצול נספר אוטומטית מהשורות שבעמודת ״הזמנה״ מופיע בהן אותו מספר – אין צורך להזין סכומים ידנית.</p>' +
+    '<table class="simple" id="ordTbl"><thead><tr><th>מספר הזמנה</th><th>בתוקף מ־</th><th>בתוקף עד</th><th>תקרה ללא מע״מ</th><th>התראה (ימים)</th><th>הערות</th><th></th></tr></thead>' +
+    '<tbody>' + entityOrders(e).map(rowHTML).join('') + '</tbody></table>' +
+    '<p><button class="btn sm" id="ordAdd">➕ הזמנה נוספת</button></p>' +
+    '<p class="muted" style="font-size:12px">״התראה״ ריקה = ברירת המחדל שבהגדרות (' + (nz(S.settings.orderAlertDays) || 30) + ' ימים). ההתראות מופיעות במרכז ההתראות ומעל הטבלה.</p>';
+  openModal({
+    title: 'הזמנות עבודה – ' + t.name, body, wide: true,
+    buttons: [{
+      label: 'שמירה', cls: 'primary', onClick: bg => {
+        const out = [];
+        for (const tr of $$('#ordTbl tbody tr', bg)) {
+          const no = $('.on', tr).value.trim();
+          const from = parseDateInput($('.of', tr).value.trim()) || '';
+          const until = parseDateInput($('.ou', tr).value.trim()) || '';
+          if ($('.ou', tr).value.trim() && !until) { toast('תאריך תוקף לא תקין בהזמנה ' + (no || '—'), 'err'); return false; }
+          if ($('.of', tr).value.trim() && !from) { toast('תאריך התחלה לא תקין בהזמנה ' + (no || '—'), 'err'); return false; }
+          if (from && until && until < from) { toast('בהזמנה ' + (no || '—') + ' תאריך התוקף מוקדם מתאריך ההתחלה', 'err'); return false; }
+          if (!no && !until) continue;
+          const o = { id: tr.dataset.oid, no, from, until };
+          const c = num($('.oc', tr).value); if (c !== null) o.ceiling = c;
+          const l = num($('.ol', tr).value); if (l !== null) o.leadDays = Math.abs(Math.round(l));
+          const n = $('.ot', tr).value.trim(); if (n) o.notes = n;
+          out.push(o);
+        }
+        const dup = out.map(o => o.no).filter((v, i, a) => v && a.indexOf(v) !== i);
+        if (dup.length) { toast('מספר הזמנה מופיע פעמיים: ' + dup[0], 'err'); return false; }
+        e.orders = out;
+        markDirty(); render();
+        toast(out.length ? out.length + ' הזמנות נשמרו' : 'רשימת ההזמנות נוקתה', 'ok');
+      }
+    }, { label: 'ביטול' }],
+    onOpen: bg => {
+      const add = () => {
+        const tb = $('#ordTbl tbody', bg);
+        tb.insertAdjacentHTML('beforeend', rowHTML({ id: uid('ord') }));
+        wire();
+      };
+      const wire = () => $$('[data-orddel]', bg).forEach(b => b.onclick = () => { b.closest('tr').remove(); });
+      $('#ordAdd', bg).onclick = add;
+      wire();
+      if (!entityOrders(e).length) add();
+    }
+  });
 }
 function tabMessagesHTML(t, items) {
   const m = [];
@@ -2882,6 +3019,8 @@ $('#view').addEventListener('click', e => {
       break;
     }
     case 'colpick': colPickerModal(t); break;
+    case 'roworder': t.entity.rowOrder = t.entity.rowOrder === 'desc' ? 'asc' : 'desc'; markDirty(); render(); break;
+    case 'orders': ordersModal(t); break;
     case 'supdefault': {
       const e2 = t.entity, on = !entitySupplierForNewRows(e2);
       if (on && num(e2.supplierPctDefault) === null) {
@@ -5459,6 +5598,28 @@ function buildAlerts() {
   for (const id of S.entityOrder) {
     const t = tabInfo(id); if (!t || !PROJECT_TYPES.includes(t.kind)) continue;
     const who = t.name + (t.entity.client ? ' · ' + t.entity.client : '');
+
+    /* הזמנות עבודה: סיום תוקף מתקרב / פג, וניצול התקרה */
+    for (const o of entityOrders(t.entity)) {
+      const s = orderStatus(t.entity, o);
+      const oref = { tabId: id, tabName: t.name };
+      const nm = 'הזמנה ' + (o.no || '(ללא מספר)');
+      if (s.expired) {
+        add(Object.assign({ key: id + '|' + o.id + '|ordexp', sev: 'err', cat: 'docs', date: o.until, days: Math.abs(s.daysLeft),
+          title: 'פג תוקף הזמנת עבודה', detail: who + ' · ' + nm + ' · התוקף הסתיים ב-' + fmtDate(o.until) + ' (לפני ' + Math.abs(s.daysLeft) + ' ימים)' }, oref));
+      } else if (s.expiring) {
+        add(Object.assign({ key: id + '|' + o.id + '|ordsoon', sev: s.daysLeft <= Math.round(s.lead / 2) ? 'err' : 'warn', cat: 'docs', date: o.until, days: s.daysLeft,
+          title: 'הזמנת עבודה עומדת להסתיים · ' + s.daysLeft + ' ימים', detail: who + ' · ' + nm + ' · בתוקף עד ' + fmtDate(o.until) + ' – יש לחדש' }, oref));
+      }
+      if (s.overCeiling) {
+        add(Object.assign({ key: id + '|' + o.id + '|ordover', sev: 'err', cat: 'docs', date: '', amount: s.used,
+          title: 'חריגה מתקרת ההזמנה', detail: who + ' · ' + nm + ' · נוצל ' + fmtMoney(s.used) + ' מתוך ' + fmtMoney(s.ceiling) + ' ₪ ללא מע״מ · חריגה ' + fmtMoney(Math.abs(s.left)) + ' ₪' }, oref));
+      } else if (s.nearCeiling) {
+        add(Object.assign({ key: id + '|' + o.id + '|ordnear', sev: 'warn', cat: 'docs', date: '', amount: s.used,
+          title: 'תקרת ההזמנה כמעט נוצלה · ' + s.pct + '%', detail: who + ' · ' + nm + ' · נותרו ' + fmtMoney(s.left) + ' ₪ ללא מע״מ מתוך ' + fmtMoney(s.ceiling) }, oref));
+      }
+    }
+
     for (const row of t.rows) {
       const c = calcRow(t.kind, row);
       const per = (row.month || '') + '/' + (row.year || '');
@@ -6236,6 +6397,7 @@ function renderSettings(v) {
     '<div class="form-row"><label>תעריף ק״מ (משהב״ט)</label><input data-set="kmRate" data-kind="num" value="' + esc(st.kmRate) + '" style="direction:ltr"></div>' +
     '<div class="form-row"><label>ימים בין קבלת הכסף לתשלום לספק</label><input data-set="supplierPayOffsetDays" data-kind="num" value="' + esc(st.supplierPayOffsetDays) + '" style="direction:ltr"><div class="hint">תאריך תשלום לספק = תאריך קבלת הכסף באטלס + מספר ימים זה (ניתן לדריסה בשורה).<br>תאריך ח. מס קבלה של הספק נרשם בעמודה נפרדת "תאריך ח. ספק" לתיעוד בלבד ואינו משפיע על התזרים.</div></div>' +
 
+    '<div class="form-row"><label>התראה לפני סיום תוקף הזמנה (ימים)</label><input data-set="orderAlertDays" data-kind="num" value="' + esc(st.orderAlertDays === undefined ? 30 : st.orderAlertDays) + '" style="direction:ltr"><div class="hint">ברירת מחדל לכל הזמנות העבודה. בכל הזמנה בנפרד אפשר לקבוע מספר ימים אחר דרך ״📄 הזמנות״ בחוצץ הפרויקט.</div></div>' +
     '<div class="form-row"><label>ברירת מחדל בתזרים</label><select data-set="includeForecast" data-kind="bool"><option value="1"' + (st.includeForecast ? ' selected' : '') + '>כולל תנועות צפויות</option><option value="0"' + (!st.includeForecast ? ' selected' : '') + '>בפועל בלבד</option></select></div>' +
     '<div class="form-row"><label>שמירה אוטומטית</label><select data-set="autosave" data-kind="bool"><option value="1"' + (st.autosave ? ' selected' : '') + '>פעילה (שנייה לאחר כל שינוי)</option><option value="0"' + (!st.autosave ? ' selected' : '') + '>כבויה – שמירה בכפתור בלבד</option></select></div>' +
     '</div><div class="hint muted">כלל תאריך קבלת הכסף (אוטומטי): נקבע רק לאחר הזנת ח. מס קבלה או קבלה, ושווה לתאריך הצפי (הוגש + ימי צפי). ניתן לדריסה ידנית בכל שורה.</div></div>';
