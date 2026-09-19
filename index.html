@@ -313,6 +313,15 @@ table.msum tfoot td{background:var(--gold-soft);font-weight:700}
 .num.neg,td.neg{color:var(--red)}
 .grid tr.mrow td{background:var(--lav)!important;border-top:2px solid var(--lav2);cursor:pointer;font-size:13px}
 .grid tr.mrow .chev{display:inline-block;width:14px;font-size:10px;color:var(--navy)}
+/* פס הפרדה רחב בגיליון הראשי: מכאן ואילך כל התנועות צפויות */
+.grid tr.cfsplit td{background:#fff!important;padding:0!important;border:0!important}
+.grid tr.cfsplit .bar{position:relative;height:14px;margin:10px 0;border-radius:7px;
+  background:repeating-linear-gradient(135deg,var(--gold) 0 10px,var(--gold-soft) 10px 20px);
+  box-shadow:inset 0 0 0 1px rgba(0,0,0,.08)}
+.grid tr.cfsplit .lbl{position:absolute;top:50%;right:50%;transform:translate(50%,-50%);
+  background:var(--navy);color:#fff;font-weight:800;font-size:12px;letter-spacing:.3px;
+  padding:4px 16px;border-radius:999px;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,.25)}
+@media print{.grid tr.cfsplit .bar{background:var(--gold);-webkit-print-color-adjust:exact;print-color-adjust:exact}}
 .grid td.h-group{font-weight:600;color:var(--navy)}
 .grid td.h-client{font-weight:600}
 .grid td.h-group+td.h-client::before,.grid td.h-client+td.h-proj::before{content:"›";color:#9aa3b8;margin-inline-end:6px;font-weight:400}
@@ -5972,7 +5981,14 @@ function renderCashflow(v) {
   const byMonth = [];
   for (const r of rows) { const m = r.date.slice(0, 7); if (!byMonth.length || byMonth[byMonth.length - 1].m !== m) byMonth.push({ m, rs: [] }); byMonth[byMonth.length - 1].rs.push(r); }
   const collapsed = UI.cfCollapsed || (UI.cfCollapsed = {});
+  // פס הפרדה: מיד אחרי התנועה האחרונה שהיא "בפועל" – מכאן והלאה הכל צפוי
+  let lastActual = -1;
+  for (let i = 0; i < rows.length; i++) if (rows[i].status === 'actual') lastActual = i;
+  const afterSplit = (lastActual >= 0 && lastActual < rows.length - 1) ? new Set(rows.slice(lastActual + 1)) : null;
+  let splitDone = !afterSplit;
+  const splitHTML = '<tr class="cfsplit"><td colspan="' + CF_COLS.length + '"><div class="bar"><span class="lbl">מכאן ואילך · תנועות צפויות</span></div></td></tr>';
   for (const g of byMonth) {
+    if (!splitDone && afterSplit.has(g.rs[0])) { h += splitHTML; splitDone = true; }
     const gi = r2(g.rs.reduce((s, r) => s + (r.dir === 'in' ? r.amount : 0), 0)), ge = r2(g.rs.reduce((s, r) => s + (r.dir === 'out' ? r.amount : 0), 0));
     const close = balanceThrough(all, d.b && d.b.to < monthEnd(g.m) ? d.b.to : monthEnd(g.m)), isC = !!collapsed[g.m];
     h += '<tr class="mrow" data-act="cfcollapse" data-m="' + g.m + '"><td colspan="4"><span class="chev">' + (isC ? '◀' : '▼') + '</span> <b>' + esc(monthName(g.m)) + '</b> <span class="muted">(' + g.rs.length + ' תנועות)</span></td>' +
@@ -5981,6 +5997,7 @@ function renderCashflow(v) {
     // קיבוץ משכורות: שורות רצופות עם אותו תאריך תשלום → שורת סיכום אחת עם +/−
     for (let i = 0; i < g.rs.length; i++) {
       const r = g.rs[i];
+      if (!splitDone && afterSplit.has(r)) { h += splitHTML; splitDone = true; }
       if (r.salGroup) {
         const grp = [r]; while (i + 1 < g.rs.length && g.rs[i + 1].salGroup === r.salGroup) grp.push(g.rs[++i]);
         const open = !!(UI.cfSalOpen && UI.cfSalOpen[r.salGroup]);
