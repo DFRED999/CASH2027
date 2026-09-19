@@ -862,10 +862,10 @@ const COLS = {
     { key: 'taxReceiptNo', label: 'ח. מס קבלה', type: 'doc' },
     { key: 'receiptNo', label: 'קבלה', type: 'doc' },
     { key: 'net', label: 'ללא מע״מ', type: 'num', money: true },
+    { key: 'offset', label: 'תוספת / קיזוז', hint: 'ללא מע״מ', type: 'adjust', money: true },
     { key: 'vatPct', label: 'מע״מ %', type: 'pct' },
     { key: 'vatAmt', label: 'מע״מ', type: 'computed', money: true },
     { key: 'total', label: 'כולל מע״מ', type: 'computed', money: true },
-    { key: 'offset', label: 'תוספת / קיזוז', hint: 'ללא מע״מ', type: 'adjust', money: true },
     { key: 'base', label: 'לתשלום', type: 'computed', money: true },
     { key: 'submitted', label: 'הוגש', type: 'date' },
     { key: 'term', label: 'צפי תשלום', type: 'term' },
@@ -894,13 +894,13 @@ const COLS = {
     { key: 'km', label: 'ק״מ ליום', type: 'num' },
     { key: 'kmMonth', label: 'סה״כ ק״מ', type: 'numAuto', money: false },
     { key: 'offroad', label: 'ר. שטח', type: 'num', money: true, flag: 'hasOffroad' },
+    { key: 'offset', label: 'תוספת / קיזוז', hint: 'ללא מע״מ', type: 'adjust', money: true },
     { key: 'preVat', label: 'לפני מע״מ', type: 'computed', money: true },
     { key: 'vatPct', label: 'מע״מ %', type: 'pct' },
     { key: 'total', label: 'כולל מע״מ', type: 'numAuto', money: true },
     { key: 'submitted', label: 'הוגש', type: 'date' },
     { key: 'term', label: 'צפי תשלום', type: 'term' },
     { key: 'moneyDate', label: 'קבלת הכסף', type: 'dateAuto' },
-    { key: 'offset', label: 'תוספת / קיזוז', hint: 'ללא מע״מ', type: 'adjust', money: true },
     { key: 'base', label: 'לתשלום', type: 'computed', money: true },
     { key: 'paid', label: 'שולם', type: 'paidStatus' },
     { key: 'supplierPct', label: '% ספק', type: 'pct' },
@@ -921,10 +921,10 @@ const COLS = {
     { key: 'taxReceiptNo', label: 'ח. מס קבלה', type: 'doc' },
     { key: 'receiptNo', label: 'קבלה', type: 'doc' },
     { key: 'net', label: 'ללא מע״מ', type: 'num', money: true },
+    { key: 'offset', label: 'תוספת / קיזוז', hint: 'ללא מע״מ', type: 'adjust', money: true },
     { key: 'vatPct', label: 'מע״מ %', type: 'pct' },
     { key: 'vatAmt', label: 'מע״מ', type: 'computed', money: true },
     { key: 'total', label: 'כולל מע״מ', type: 'computed', money: true },
-    { key: 'offset', label: 'תוספת / קיזוז', hint: 'ללא מע״מ', type: 'adjust', money: true },
     { key: 'base', label: 'לתשלום', type: 'computed', money: true },
     { key: 'submitted', label: 'הוגש', type: 'date' },
     { key: 'term', label: 'צפי תשלום', type: 'term' },
@@ -1036,13 +1036,18 @@ const TOGGLE_LABELS = { supplierPaid: ['טרם שולם', 'שולם'], status: [
 const OVERRIDABLE_NUM = { yazam: ['supplierPay'], mod: ['kmMonth', 'total', 'supplierPay'], regular: [], freelancer: [] };
 const FORMULA = {
   'mod.total': 'לפני מע״מ × (1 + מע״מ%)',
-  'yazam.base': 'כולל מע״מ + (תוספת − קיזוז) × (1 + מע״מ%)',
-  'mod.base': 'כולל מע״מ + (תוספת − קיזוז) × (1 + מע״מ%)',
-  'regular.base': 'כולל מע״מ + (תוספת − קיזוז) × (1 + מע״מ%)',
+  'mod.preVat': 'שעות × עלות ש״ע + סה״כ ק״מ × תעריף ק״מ + ר. שטח + (תוספת − קיזוז)',
+  'yazam.vatAmt': '(ללא מע״מ + תוספת − קיזוז) × מע״מ%',
+  'regular.vatAmt': '(ללא מע״מ + תוספת − קיזוז) × מע״מ%',
+  'yazam.total': '(ללא מע״מ + תוספת − קיזוז) × (1 + מע״מ%)',
+  'regular.total': '(ללא מע״מ + תוספת − קיזוז) × (1 + מע״מ%)',
+  'yazam.base': 'זהה ל״כולל מע״מ״ – התוספת/קיזוז כבר בתוכו',
+  'mod.base': 'זהה ל״כולל מע״מ״ – התוספת/קיזוז כבר בתוכו',
+  'regular.base': 'זהה ל״כולל מע״מ״ – התוספת/קיזוז כבר בתוכו',
   'mod.kmMonth': 'כמות ימים × ק״מ ליום',
   'freelancer.total': 'סכום ללא מע״מ × (1 + מע״מ%)',
-  'yazam.supplierPay': 'סה״כ כולל מע״מ × (1 − אחוז גבייה%) + (תוספת לספק − קיזוז לספק) × (1 + מע״מ%)',
-  'mod.supplierPay': 'כולל מע״מ × (1 − אחוז גבייה%) + (תוספת לספק − קיזוז לספק) × (1 + מע״מ%)'
+  'yazam.supplierPay': 'כולל מע״מ (אחרי תוספת/קיזוז) × (1 − אחוז גבייה%) + (תוספת לספק − קיזוז לספק) × (1 + מע״מ%)',
+  'mod.supplierPay': 'כולל מע״מ (אחרי תוספת/קיזוז) × (1 − אחוז גבייה%) + (תוספת לספק − קיזוז לספק) × (1 + מע״מ%)'
 };
 
 /* ---------------- tabs ---------------- */
@@ -1151,8 +1156,12 @@ function calcRow(kind, row) {
   const offsetDays = nz(S.settings.supplierPayOffsetDays);
 
   if (kind === 'yazam' || kind === 'mod' || kind === 'regular') {
+    // תוספת / קיזוז מוזנים ללא מע״מ ונכנסים לסכום שלפני המע״מ; משם המע״מ, הסה״כ
+    // והתשלום לספק מחושבים אוטומטית – ואין קיזוז נפרד על התשלום הסופי.
+    c.offNet = rowOffset(row);
     if (kind === 'yazam' || kind === 'regular') {
-      const net = nz(row.net);
+      const net = r2(nz(row.net) + c.offNet);
+      c.netAdj = net;
       c.vatAmt = r2(net * vat / 100);
       c.total = r2(net + c.vatAmt);
     } else {
@@ -1161,15 +1170,14 @@ function calcRow(kind, row) {
       // סה״כ ק״מ לחודש = כמות הימים × ק״מ ליום (ניתן לדריסה ידנית)
       pick('kmMonth', r2(nz(row.days) * nz(row.km)));
       c.kmMonth = nz(c.kmMonth);
-      // לפני מע״מ = שעות × עלות שעה + סה״כ ק״מ לחודש × תעריף ק״מ + רכב שטח
-      c.preVat = r2(hours * nz(row.rate) + c.kmMonth * nz(S.settings.kmRate) + nz(row.offroad));
+      // לפני מע״מ = שעות × עלות שעה + סה״כ ק״מ לחודש × תעריף ק״מ + רכב שטח + תוספת/קיזוז
+      c.preVat = r2(hours * nz(row.rate) + c.kmMonth * nz(S.settings.kmRate) + nz(row.offroad) + c.offNet);
       pick('total', r2(c.preVat * (1 + vat / 100)));
       c.total = nz(c.total);
     }
-    // תוספת / קיזוז מוזנים תמיד כסכום ללא מע״מ, ולכן מתווסף להם מע״מ לפני שהם משפיעים על התשלום
-    c.offNet = rowOffset(row);
+    // התוספת/קיזוז כבר מגולמים בסכום שלפני המע״מ, ולכן "לתשלום" הוא פשוט הסה״כ כולל מע״מ
     c.offGross = r2(c.offNet * (1 + vat / 100));
-    c.base = r2(c.total + c.offGross);
+    c.base = c.total;
     // צפי התשלום נגזר תמיד מתאריך ההגשה + תנאי התשלום (למשל 30/05 + 45)
     if (row.term === 'manual') c.expectedDate = row.expectedManual || '';
     else c.expectedDate = (row.submitted && row.term) ? addDays(row.submitted, row.term) : '';
@@ -1180,8 +1188,8 @@ function calcRow(kind, row) {
     c.supplierOn = kind !== 'regular' && rowHasSupplier(row);
     if (c.supplierOn) {
       const pct = num(row.supplierPct);
-      // תוספת/קיזוז של הלקוח לא עוברים לספק אוטומטית; התאמה לספק מוזנת בתא "תוספת / קיזוז לספק"
-      // גם כאן הסכום מוזן ללא מע״מ, ומתווסף לו מע״מ לפני שהוא משפיע על התשלום לספק
+      // התוספת/קיזוז של הלקוח כבר מגולמים בסה״כ, ולכן אחוז הגבייה מחושב על הסכום המתוקן.
+      // התאמה ייחודית לספק מוזנת בתא "תוספת / קיזוז ספק" – גם היא ללא מע״מ, ומתווסף לה מע״מ.
       c.supAdjNet = adjNet(row, 'supAdd', 'supDed');
       c.supAdjGross = r2(c.supAdjNet * (1 + vat / 100));
       pick('supplierPay', pct === null ? null : r2(c.total * (1 - pct / 100) + c.supAdjGross));
