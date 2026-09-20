@@ -370,7 +370,10 @@ table.msum tfoot td{background:var(--gold-soft);font-weight:700}
 .grid-wrap.skin-soft .grid tr.ccgrp td a,.grid-wrap.skin-soft .grid tr.salgrp td a,
 .grid-wrap.skin-soft .grid tr.ccgrp td span,.grid-wrap.skin-soft .grid tr.ccgrp td b,
 .grid-wrap.skin-soft .grid tr.salgrp td span,.grid-wrap.skin-soft .grid tr.salgrp td b{color:#2a3450!important}
-.grid-wrap.skin-soft .grid tr.bankgrp td{background:#fffaec!important}
+.grid-wrap.skin-soft .grid tr.bankgrp td{background:#fdf0b5!important;color:#111!important;font-weight:400}
+.grid-wrap.skin-soft .grid tr.bankgrp td .muted,.grid-wrap.skin-soft .grid tr.bankgrp td a,
+.grid-wrap.skin-soft .grid tr.bankgrp td b{color:#111!important}
+.grid-wrap.skin-soft .grid tr.bankgrp td b{font-weight:600}
 .grid-wrap.skin-soft .grid tr.authgrp td{background:#f3f7ff!important}
 .grid-wrap.skin-soft .grid tr.ccgrp td{background:#f5f6f9!important}
 .grid-wrap.skin-soft .grid tr.salgrp td{background:#faf5f0!important}
@@ -471,8 +474,10 @@ table.msum tfoot td{background:var(--gold-soft);font-weight:700}
 .bulk-bar .muted{color:#c9d3ea}
 .bulk-bar .pl{display:flex;align-items:center;gap:6px;font-size:12.5px}
 .bulk-bar select{height:30px;border-radius:8px;border:1px solid #3a4f86;background:#2b3d6b;color:#fff;padding:0 8px;font-family:inherit}
-.grid tr.bankgrp td{background:#fdf0b5!important;color:#1b2233!important;font-weight:700;border-color:#e6d284}
-.grid tr.bankgrp td .muted,.grid tr.bankgrp td a{color:#4a4526!important}
+/* שורת הבנק בגיליון הראשי: רקע צהוב עם כיתוב שחור רגיל – מזוהה בלי להיות בולטת */
+.grid tr.bankgrp td{background:#fdf0b5!important;color:#111!important;font-weight:400;border-color:#e6d284}
+.grid tr.bankgrp td b{font-weight:600}
+.grid tr.bankgrp td .muted,.grid tr.bankgrp td a{color:#111!important}
 .grid tr.bankgrp td .grp-toggle{background:rgba(0,0,0,.08);color:#1b2233;border-color:#c9b46b}
 .grid tr.bankgrp td .status.yes{background:#0f7a35;color:#fff}
 .grid tr.bankdet td{background:#fffbe8!important}
@@ -766,7 +771,7 @@ function toast(text, kind, ms) {
 
 /* ---------------- state ---------------- */
 /* סוגי תנועה בבנק – רשימה נפתחת שמתרחבת לבד (אפשר להוסיף סוג חדש מתוך הטבלה) */
-const BANK_TX_TYPES = ['עמלת בנק', 'העברה לפיקדון', 'משיכה מפיקדון', 'ריבית / רווח', 'דיבידנד', 'העברה בנקאית', 'החזר / זיכוי', 'תנועה בנקאית אחרת'];
+const BANK_TX_TYPES = ['עמלת בנק', 'העברה לפיקדון', 'משיכה מפיקדון', 'ריבית / רווח', 'דיבידנד', 'העברה בנקאית', 'תשלום לעצמאי', 'החזר / זיכוי', 'תנועה בנקאית אחרת'];
 const BANK_TYPE_MIGRATE = { fee: 'עמלת בנק', deposit: 'העברה בנקאית', withdrawal: 'משיכה מפיקדון', other: 'תנועה בנקאית אחרת' };
 const SCHEMA = 'atlas-cashflow';
 const SCHEMA_VERSION = 1;
@@ -879,6 +884,8 @@ function normalizeState(o) {
     delete r.amount; delete r.direction;
     if (r.txType && !s.settings.bankTxTypes.includes(r.txType)) s.settings.bankTxTypes.push(r.txType);
   });
+  // סוג התנועה "תשלום לעצמאי" נוסף לאתרים קיימים שנשמרו לפניו
+  if (!s.settings.bankTxTypes.includes('תשלום לעצמאי')) s.settings.bankTxTypes.splice(6, 0, 'תשלום לעצמאי');
   s.entities = s.entities || {};
   s.entityOrder = (s.entityOrder || []).filter(id => s.entities[id]);
   for (const id of Object.keys(s.entities)) {
@@ -905,6 +912,25 @@ function normalizeState(o) {
     }
   });
   s.employees = s.employees || []; s.docs = s.docs || {}; s.anomalies = s.anomalies || {};
+  // ניקוי: גרסה קודמת פתחה רשומת אדם בכ״א מכל שם שהוקלד בעמודת ״גוף״ בבנק, כולל שמות
+  // שאינם אנשים (למשל ״פיקדון בנקאי״). הרשומות האלה מוסרות, ותנועות הבנק שלהן משוחררות
+  // וחוזרות להיות תנועות בנק רגילות – הכסף עצמו נשמר, רק השיוך המוטעה בוטל.
+  for (const id of Object.keys(s.entities)) {
+    const e = s.entities[id];
+    if (e.type !== 'freelancer' || !e.unmatchedName) continue;
+    const isPerson = s.employees.some(x => String(x.name || '').trim() === String(e.name || '').trim());
+    if (isPerson) { delete e.unmatchedName; continue; }
+    for (const r of e.rows || []) {
+      const b = s.ops.bank.rows.find(x => x.id === r.bankRowId);
+      if (!b) continue;
+      delete b.freeEntId; delete b.freeRowId;
+      // תנועת פיקדון שנחטפה – מוחזרת לזהותה המקורית
+      if (b.depId) { b.party = 'פיקדון בנקאי'; b.txType = Math.abs(nz(b.income)) ? 'משיכה מפיקדון' : 'העברה לפיקדון'; }
+    }
+    for (const d of Object.values(s.docs)) if (d.tabId === id) delete s.docs[d.id];
+    delete s.entities[id];
+    s.entityOrder = s.entityOrder.filter(x => x !== id);
+  }
   return s;
 }
 
@@ -1319,7 +1345,11 @@ function calcRow(kind, row) {
     c.total = c.amount = Math.abs(nz(row.amount));
     c.base = c.amount;
     c.paid = !!row.payDate;
-    c.payStatus = row.payDate ? 'שולם' : 'טרם שולם';
+    // תשלום שיצא מחשבון הבנק – התנועה מגיעה לתזרים משורת הבנק המקושרת, ולכן אין כפילות
+    c.viaBank = !!row.bankRowId && S.ops.bank.rows.some(b => b.id === row.bankRowId);
+    if (row.bankRowId && !c.viaBank) c.srcMissing = true;
+    c.payStatus = c.viaBank ? 'שולם דרך הבנק' : (row.payDate ? 'שולם' : 'טרם שולם');
+    c.inCashflow = !c.viaBank && !!(row.payDate && c.amount);
   } else if (kind === 'pensions') {
     pick('total', r2(nz(row.empDeposit) + nz(row.erDeposit) + nz(row.severance)));
     c.total = nz(c.total);
@@ -1386,6 +1416,11 @@ function calcRow(kind, row) {
       c.inCashflow = !!(c.cfDate && c.amount);
       return c;
     }
+    // שורה שמקושרת לחוצץ עצמאי – התנועה נספרת כאן, אך מוצגת בגיליון הראשי תחת שם האדם
+    const fl = freeRowOf(row);
+    c.toFree = !!fl;
+    c.freeMissing = !!row.freeRowId && !fl;
+    if (fl) { c.freeName = fl.ent.name; c.freeEntId = fl.ent.id; c.freeDoc = String(fl.row.taxReceiptNo || '').trim(); c.freeProject = fl.row.projectName || ''; }
     // ממלאים רק צד אחד: הכנסה או הוצאה. הכיוון והסכום נגזרים מהם.
     const inc = Math.abs(nz(row.income)), exp = Math.abs(nz(row.expense));
     c.income = inc; c.expense = exp;
@@ -1430,6 +1465,7 @@ function buildCashflow() {
           }));
         }
       } else if (t.kind === 'freelancer') {
+        if (!c.inCashflow) continue; // תשלום שנרשם בחוצץ הבנק נספר שם
         push(Object.assign({}, refBase, {
           key: id + '|' + row.id, dir: 'out', role: 'תשלום לעצמאי', amount: c.base, date: row.payDate,
           status: row.payDate && row.payDate <= today ? 'actual' : 'forecast', entity: t.name, desc: row.projectName || '',
@@ -1466,7 +1502,11 @@ function buildCashflow() {
     // "עבור איזה חודש" הוא מידע ניהולי בלבד – התזרים נקבע תמיד לפי התאריך בפועל
     const d = c.cfDate || row.date;
     const forM = row.forMonth && row.forMonth !== d.slice(0, 7) ? ' · עבור ' + row.forMonth.slice(5) + '.' + row.forMonth.slice(0, 4) : '';
-    push(Object.assign(opsRef('bank', row), { key: 'bank|' + row.id, bankGroup: 1, dir: c.dir, role: row.txType || 'תנועה בנקאית', amount: c.amount, date: d, status: d <= today ? 'actual' : 'forecast', entity: (c.fromAuth ? c.authName : row.party) || 'בנק', client: 'בנק', desc: (row.description || '') + forM, docs: row.docNo ? [{ field: 'docNo', no: row.docNo }] : [] }));
+    const docs = row.docNo ? [{ field: 'docNo', no: row.docNo }] : [];
+    const base = Object.assign(opsRef('bank', row), { key: 'bank|' + row.id, dir: c.dir, amount: c.amount, date: d, status: d <= today ? 'actual' : 'forecast', desc: (row.description || '') + forM, docs });
+    // תשלום לעצמאי מוצג תחת שם האדם, לצד השכר והפנסיה שלו, ולא בבלוק תנועות הבנק
+    if (c.toFree) push(Object.assign(base, { group: GROUP_LABEL.freelancer, role: FREE_TX_TYPE, entity: c.freeName, client: c.freeName, tabName: c.freeName, desc: [c.freeProject, row.description || ''].filter(Boolean).join(' · ') + forM }));
+    else push(Object.assign(base, { bankGroup: 1, role: row.txType || 'תנועה בנקאית', entity: (c.fromAuth ? c.authName : row.party) || 'בנק', client: 'בנק' }));
   }
   // אשראי: שורה אחת לכל חיוב חודשי של כרטיס (סכום העסקאות פחות הזיכויים), לפי מועד החיוב בבנק
   const groups = {};
@@ -1777,7 +1817,18 @@ function cellHTML(t, col, row, c) {
       const opts = bankTxTypes(); if (v && !opts.includes(v)) opts.push(v);
       return td('<select class="cell w-m" data-type="text" ' + a + '><option value=""></option>' + opts.map(o => '<option' + (o === v ? ' selected' : '') + '>' + esc(o) + '</option>').join('') + '<option value="__new">+ סוג חדש…</option></select>');
     }
-    case 'party': return td('<input class="cell w-' + (col.w || 'm') + '" type="text" list="bankPartyList" value="' + esc(v) + '" data-type="text" ' + a + ' placeholder="למי / ממי">');
+    case 'party': {
+      // תשלום לעצמאי חייב להיות מופנה לאדם קיים בכ״א – בחירה מרשימה, לא טקסט חופשי,
+      // כדי שלא ייפתח בטעות "אדם" חדש משם שהוקלד (למשל ״פיקדון בנקאי״)
+      if ((row.txType || '') === FREE_TX_TYPE) {
+        const ppl = allPeople(false);
+        const known = ppl.some(p => normPerson(p.name) === normPerson(v));
+        return td('<select class="cell w-' + (col.w || 'm') + '" data-type="text" ' + a + '><option value="">— בחר אדם —</option>' +
+          (v && !known ? '<option value="' + esc(v) + '" selected>' + esc(v) + ' (לא מזוהה)</option>' : '') +
+          ppl.map(p => '<option value="' + esc(p.name) + '"' + (normPerson(p.name) === normPerson(v) ? ' selected' : '') + '>' + esc(p.name) + '</option>').join('') + '</select>');
+      }
+      return td('<input class="cell w-' + (col.w || 'm') + '" type="text" list="bankPartyList" value="' + esc(v) + '" data-type="text" ' + a + ' placeholder="למי / ממי">');
+    }
     case 'ymonth': {
       const lbl = v ? v.slice(5) + '.' + v.slice(0, 4) : '—';
       return td('<span class="mpick" data-act="pickymonth" ' + a + ' title="חודש ניהולי בלבד – אינו משפיע על מיקום התנועה בתזרים">' + lbl + '</span>');
@@ -1797,6 +1848,8 @@ function cellHTML(t, col, row, c) {
 function bankTxTypes() { return (S.settings.bankTxTypes || BANK_TX_TYPES).slice(); }
 function bankPartyList() {
   const set = new Set(S.ops.bank.rows.map(r => (r.party || '').trim()).filter(Boolean));
+  // שמות האנשים מוצעים גם הם, כדי שתשלום לעצמאי יתקשר לחוצץ הנכון
+  allPeople(false).forEach(p => set.add(p.name));
   return '<datalist id="bankPartyList">' + [...set].map(x => '<option value="' + esc(x) + '">').join('') + '</datalist>';
 }
 let BANK_BAL = null;
@@ -2414,12 +2467,25 @@ function tabMessagesHTML(t, items) {
   if (zero) m.push(['err', zero + ' שורות עם מסמך ספק חסר (מספר 0).']);
   const an = pendingAnomalyCount(t.tabId);
   if (an) m.push(['warn', an + ' אנומליות ממתינות לבירור בחוצץ זה – <a href="#" data-nav-an="1">לרשימה</a>']);
+  if (t.kind === 'freelancer') {
+    const viaBank = t.rows.filter(r => calcRow('freelancer', r).viaBank).length;
+    const noDoc = t.rows.filter(r => r.payDate && !String(r.taxReceiptNo || '').trim()).length;
+    if (viaBank) m.push(['info', viaBank + ' תשלומים יצאו מחשבון הבנק ומקושרים לתנועה שם – הם נספרים בתזרים פעם אחת בלבד, תחת השם הזה.']);
+    if (noDoc) m.push(['warn', noDoc + ' תשלומים ששולמו ללא חשבונית מס / קבלה מצורפת.']);
+  }
   if (t.kind === 'bank') {
     const both = t.rows.filter(r => Math.abs(nz(r.income)) > 0 && Math.abs(nz(r.expense)) > 0).length;
     const noDate = t.rows.filter(r => (Math.abs(nz(r.income)) || Math.abs(nz(r.expense))) && !r.date).length;
     const noAmt = t.rows.filter(r => r.date && !Math.abs(nz(r.income)) && !Math.abs(nz(r.expense))).length;
     const fromAuth = t.rows.filter(r => r.authRowId).length;
     if (fromAuth) m.push(['info', fromAuth + ' תנועות מגיעות מחוצץ ״רשויות״ (רקע ירקרק) – הסכום והתאריך מתעדכנים משם, ואפשר לערוך אותם גם כאן.']);
+    const toFree = t.rows.filter(r => r.freeRowId && freeRowOf(r)).length;
+    const freeNoName = t.rows.filter(r => (r.txType || '') === FREE_TX_TYPE && !String(r.party || '').trim()).length;
+    if (toFree) m.push(['info', toFree + ' תנועות הן תשלום לעצמאי – לכל אחת נרשמה שורה בחוצץ של אותו אדם, ובגיליון הראשי היא מופיעה תחת שמו ולא בבלוק הבנק.']);
+    if (freeNoName) m.push(['warn', freeNoName + ' תנועות מסומנות ״' + FREE_TX_TYPE + '״ ללא שם בעמודת ״גוף״ – יש לבחור את האדם מהרשימה כדי שהתשלום יירשם בחוצץ שלו.']);
+    // שם שאינו של אדם רשום – התנועה לא תשויך לאיש עד שייבחר אדם מהרשימה
+    const unknown = [...new Set(t.rows.filter(r => (r.txType || '') === FREE_TX_TYPE && String(r.party || '').trim() && !personEntityFor(r.party, false) && !allPeople(true).some(p => samePerson(p.name, r.party) || normPerson(p.name) === normPerson(r.party))).map(r => String(r.party).trim()))];
+    if (unknown.length) m.push(['err', 'השמות הבאים אינם רשומים בכ״א ולכן התשלום לא שויך לאיש: ' + unknown.map(n => { const near = personNearMatch(n); return n + (near ? ' (התכוונת ל' + near.name + '?)' : ''); }).join(' · ') + '. יש לבחור אדם מהרשימה בעמודת ״גוף״.']);
     if (both) m.push(['err', both + ' שורות עם הכנסה והוצאה יחד – יש למלא רק צד אחד (התזרים סופר את ההכנסה בלבד).']);
     if (noDate) m.push(['warn', noDate + ' תנועות ללא תאריך בפועל – לא ייכנסו לתזרים עד להזנת תאריך.']);
     if (noAmt) m.push(['info', noAmt + ' שורות ללא סכום.']);
@@ -2971,6 +3037,10 @@ function setField(t, rowId, key, raw, type, isOv) {
   if ((t.kind === 'salaries' || t.kind === 'pensions' || t.kind === 'authorities') && key === 'payDate') delete row.payDateAuto;
   if (t.kind === 'authorities' && key === 'payDate' && val) row.status = true;
   if (t.kind === 'authorities' && ['status', 'payDate', 'dueDate', 'amount', 'method', 'authType', 'authName', 'action', 'year', 'month'].includes(key)) setTimeout(() => { authBankSync(row); render(); }, 0);
+  // תשלום לעצמאי: עריכה בחוצץ האדם מעדכנת את שורת הבנק, ועריכה בבנק מעדכנת את שורת האדם.
+  // הסנכרון רץ מיד (ולא ב-setTimeout) כדי שהמצב יהיה עקבי כבר ברינדור שבסוף הפונקציה.
+  if (t.kind === 'freelancer' && ['amount', 'payDate', 'year', 'month', 'projectName', 'taxReceiptNo'].includes(key)) freeBankSync(row, t.entity);
+  if (t.kind === 'bank' && ['txType', 'party', 'income', 'expense', 'date', 'forMonth', 'docNo'].includes(key) && ((row.txType || '') === FREE_TX_TYPE || row.freeRowId)) bankFreeSync(row);
   if (t.kind === 'bank' && row.authRowId) {
     const a = S.ops.authorities.rows.find(x => x.id === row.authRowId);
     if (a) {
@@ -3059,6 +3129,12 @@ $('#view').addEventListener('click', e => {
         if (t.kind === 'authorities' && row.bankRowId) S.ops.bank.rows = S.ops.bank.rows.filter(x => x.id !== row.bankRowId);
         if (t.kind === 'bank' && row.authRowId) { const a = S.ops.authorities.rows.find(x => x.id === row.authRowId); if (a) { delete a.bankRowId; toast('התנועה נמחקה מהבנק · שורת הרשויות חזרה להופיע בתזרים ישירות', 'warn', 6000); } }
         if (t.kind === 'bank' && row.depId) { const dr = S.ops.bank.deposit.rows; const j = dr.findIndex(x => x.id === row.depId); if (j >= 0) dr.splice(j, 1); }
+        // תשלום לעצמאי: מחיקה בצד אחד מוחקת גם את השורה המקושרת בצד השני
+        if (t.kind === 'freelancer' && row.bankRowId) { freeDocDrop('ops:bank', row.bankRowId, 'docNo'); S.ops.bank.rows = S.ops.bank.rows.filter(x => x.id !== row.bankRowId); }
+        if (t.kind === 'bank' && row.freeRowId) {
+          const fl = freeRowOf(row);
+          if (fl) { freeDocDrop(fl.ent.id, fl.row.id, 'taxReceiptNo'); fl.ent.rows = fl.ent.rows.filter(r => r.id !== fl.row.id); toast('התנועה נמחקה · נמחקה גם השורה בחוצץ של ' + fl.ent.name, 'warn', 6000); }
+        }
         for (const d of Object.values(S.docs)) if (d.tabId === t.tabId && d.rowId === row.id) delete S.docs[d.id];
         for (const k of Object.keys(S.anomalies)) if (k.startsWith(t.tabId + '|' + row.id + '|')) delete S.anomalies[k];
         markDirty(); render();
@@ -5192,6 +5268,127 @@ function personAction(act, el, e) {
       break;
     }
   }
+}
+
+/* =====================================================================
+   תשלום לעצמאי · קישור בין חוצץ האדם לחוצץ הבנק
+   --------------------------------------------------------------------
+   אותו תשלום נרשם פעם אחת בלבד בתזרים. הקישור דו-כיווני: שורה שנוצרת
+   בחוצץ העצמאי פותחת שורת בנק תואמת, ושורת בנק שסומנה "תשלום לעצמאי"
+   ומולאה בשם האדם פותחת לו שורה בחוצץ שלו. הדפוס זהה לקישור
+   רשויות↔בנק הקיים, אלא שכאן השורה בגיליון הראשי מוצגת תחת שם האדם
+   ולא בבלוק הבנק – כדי שכל מה שיצא לאדם יופיע במקום אחד לצד השכר
+   והפנסיה. היתרה המצטברת בחוצץ הבנק נשמרת, כי שורת הבנק היא זו
+   שנספרת בתזרים.
+   ===================================================================== */
+const FREE_TX_TYPE = 'תשלום לעצמאי';
+function freeRowOf(bankRow) {
+  if (!bankRow || !bankRow.freeEntId || !bankRow.freeRowId) return null;
+  const ent = S.entities[bankRow.freeEntId];
+  if (!ent || ent.type !== 'freelancer') return null;
+  const row = (ent.rows || []).find(r => r.id === bankRow.freeRowId);
+  return row ? { ent, row } : null;
+}
+function freeBankRowOf(row) { return row && row.bankRowId ? S.ops.bank.rows.find(b => b.id === row.bankRowId) : null; }
+function freeEntOfRow(row) { return personEntities().find(e => (e.rows || []).some(r => r.id === row.id)) || null; }
+/* חוצץ העצמאי של אדם לפי שם. נפתח אוטומטית רק לאדם שכבר רשום בכ״א –
+   שם שאינו של אדם קיים לעולם אינו פותח רשומת אדם חדשה. */
+function personEntityFor(name, create) {
+  const n = String(name || '').trim(); if (!n) return null;
+  const ent = personEntities().find(e => samePerson(e.name, n) || normPerson(e.name) === normPerson(n));
+  if (ent || !create) return ent || null;
+  const p = allPeople(true).find(x => samePerson(x.name, n) || normPerson(x.name) === normPerson(n));
+  if (!p) return null;                       // שם לא מזוהה – לא נפתח אדם חדש
+  const id = uid('freelancer');
+  const e2 = { id, type: 'freelancer', name: p.name, owner: '', docPath: '', createdAt: new Date().toISOString(), rows: [] };
+  S.entities[id] = e2; S.entityOrder.push(id); UI.sbOpen.freelancer = true;
+  return e2;
+}
+/* שמות דומים לאדם קיים – כדי להתריע על כפילות שנוצרה מטעות הקלדה */
+function personNearMatch(name) {
+  const w = normPerson(name).split(' ').filter(Boolean);
+  if (w.length < 1) return null;
+  const hits = allPeople(true).filter(p => {
+    if (samePerson(p.name, name) || normPerson(p.name) === normPerson(name)) return false;
+    const pw = normPerson(p.name).split(' ').filter(Boolean);
+    return w.every(x => pw.includes(x)) || (pw.length > 1 && pw.every(x => w.includes(x)));
+  });
+  return hits.length === 1 ? hits[0] : null;
+}
+/* המסמך שצורף בצד אחד נגיש גם מהצד השני ומהגיליון הראשי */
+function freeDocMirror(ent, row, b) {
+  const a = findDoc(ent.id, row.id, 'taxReceiptNo'), c = findDoc('ops:bank', b.id, 'docNo');
+  const src = a || c; if (!src || (a && c)) return;
+  const tgt = a ? { tabId: 'ops:bank', rowId: b.id, field: 'docNo' } : { tabId: ent.id, rowId: row.id, field: 'taxReceiptNo' };
+  const id = uid('doc');
+  S.docs[id] = Object.assign({}, src, tgt, { id, mirrorOf: src.id });
+  if (sessionBlobs[src.id]) sessionBlobs[id] = sessionBlobs[src.id];
+  if (sessionFiles[src.id]) sessionFiles[id] = sessionFiles[src.id];
+}
+function freeDocDrop(tabId, rowId, field) {
+  for (const d of Object.values(S.docs)) if (d.tabId === tabId && d.rowId === rowId && d.field === field && d.mirrorOf) delete S.docs[d.id];
+}
+/* מחוצץ העצמאי אל הבנק */
+function freeBankSync(row, ent) {
+  ent = ent || freeEntOfRow(row); if (!ent) return;
+  const amt = Math.abs(nz(row.amount));
+  let b = freeBankRowOf(row);
+  // תשלום ללא תאריך או ללא סכום הוא עדיין צפי – אין לו תנועה בבנק
+  if (!row.payDate || !amt) {
+    if (b) { freeDocDrop('ops:bank', b.id, 'docNo'); S.ops.bank.rows = S.ops.bank.rows.filter(x => x.id !== b.id); }
+    delete row.bankRowId; markDirty(); return;
+  }
+  if (!b) {
+    // אם כבר קיימת תנועה מתאימה בבנק (אותו תאריך ואותו סכום) – מתחברים אליה במקום ליצור כפילות.
+    // תנועות שכבר שייכות למשהו אחר (רשויות, פיקדון) אינן נחטפות.
+    b = S.ops.bank.rows.find(x => !x.authRowId && !x.freeRowId && !x.depId && x.date === row.payDate && Math.abs(Math.abs(nz(x.income)) + Math.abs(nz(x.expense)) - amt) < 0.5);
+    if (!b) { b = newRow('bank'); b.serial = nextSerial(S.ops.bank.rows); S.ops.bank.rows.push(b); }
+    b.freeEntId = ent.id; b.freeRowId = row.id; row.bankRowId = b.id;
+  }
+  Object.assign(b, {
+    date: row.payDate,
+    forMonth: (row.year && row.month) ? row.year + '-' + pad2(row.month) : row.payDate.slice(0, 7),
+    txType: FREE_TX_TYPE, party: ent.name,
+    description: [FREE_TX_TYPE, ent.name, row.projectName || '', (row.month && row.year) ? 'חודש ' + row.month + '/' + row.year : ''].filter(Boolean).join(' · ')
+  });
+  b.expense = amt; b.income = null;
+  if (!String(b.docNo || '').trim() && String(row.taxReceiptNo || '').trim()) b.docNo = row.taxReceiptNo;
+  freeDocMirror(ent, row, b);
+  markDirty();
+}
+/* מחוצץ הבנק אל חוצץ העצמאי */
+function bankFreeSync(b) {
+  const link = freeRowOf(b);
+  const name = String(b.party || '').trim();
+  if ((b.txType || '') !== FREE_TX_TYPE || !name) {
+    if (link) { freeDocDrop(link.ent.id, link.row.id, 'taxReceiptNo'); link.ent.rows = link.ent.rows.filter(r => r.id !== link.row.id); }
+    delete b.freeEntId; delete b.freeRowId;
+    if (link) markDirty();
+    return;
+  }
+  let ent = link && (samePerson(link.ent.name, name) || normPerson(link.ent.name) === normPerson(name)) ? link.ent : personEntityFor(name, true);
+  // שם שאינו של אדם רשום – השורה נשארת תנועת בנק רגילה עד שייבחר אדם מהרשימה
+  if (!ent) {
+    if (link) { freeDocDrop(link.ent.id, link.row.id, 'taxReceiptNo'); link.ent.rows = link.ent.rows.filter(r => r.id !== link.row.id); }
+    delete b.freeEntId; delete b.freeRowId; markDirty();
+    return;
+  }
+  let row = link && ent === link.ent ? link.row : null;
+  if (link && ent !== link.ent) { freeDocDrop(link.ent.id, link.row.id, 'taxReceiptNo'); link.ent.rows = link.ent.rows.filter(r => r.id !== link.row.id); }
+  if (!row) {
+    row = newRow('freelancer'); row.serial = nextSerial(ent.rows); ent.rows.push(row);
+    b.freeEntId = ent.id; b.freeRowId = row.id; row.bankRowId = b.id;
+  }
+  // שם מזוהה נרשם בצורתו הרשמית ("ברי" → "ברוך בארי כהן"), כדי שהחוצץ והבנק ידברו באותו שם
+  if (normPerson(b.party) !== normPerson(ent.name)) b.party = ent.name;
+  const ym = b.forMonth || (b.date || '').slice(0, 7) || curMonth();
+  Object.assign(row, {
+    amount: Math.abs(nz(b.expense)) || Math.abs(nz(b.income)),
+    payDate: b.date || '', year: ym.slice(0, 4), month: ym.slice(5, 7)
+  });
+  if (!String(row.taxReceiptNo || '').trim() && String(b.docNo || '').trim()) row.taxReceiptNo = b.docNo;
+  freeDocMirror(ent, row, b);
+  markDirty();
 }
 /* =====================================================================
    סנכרון ענן (Firebase Realtime Database) – אותם נתונים בכל המכשירים
