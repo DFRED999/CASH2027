@@ -123,6 +123,12 @@ input,select,textarea{font-family:inherit;font-size:13px}
 .side-panel table{width:100%;border-collapse:collapse;font-size:13px}
 .side-panel td{padding:4px;border-bottom:1px solid var(--line)}
 .side-panel td:last-child{text-align:left;direction:ltr}
+.side-panel tr.hl-row td{background:#fdf3c8!important}
+.side-panel .tot-row td{position:static}
+.side-panel a.emp-link{text-decoration:none}
+/* כפתור "חזרה למסך הקודם" בראש כל חוצץ / כרטיס אדם */
+.crumb .back-btn{background:#fff;border:1px solid var(--navy);color:var(--navy);font-weight:500;white-space:nowrap}
+.crumb .back-btn:hover{background:var(--navy);color:#fff}
 
 /* ---------- messages ---------- */
 #msgArea{margin-bottom:10px;display:flex;flex-direction:column;gap:6px}
@@ -271,6 +277,7 @@ table.simple td.num{direction:ltr;text-align:left}
 .np-grid input:focus{outline:none;border-color:#3f6b58;box-shadow:0 0 0 2px rgba(63,107,88,.15)}
 .np-grid input::placeholder{color:#9aa1ab}
 .np-grid input.np-short{width:150px}
+.np-grid select{width:100%;height:30px;border:1px solid #d4d8dd;border-radius:5px;padding:3px 8px;font-size:13px;background:#fff;font-family:inherit}
 .np-actions{display:flex;gap:10px;margin-top:22px}
 .np-btn{height:34px;padding:0 16px;border-radius:6px;border:1px solid #cfd4da;background:#fff;color:#1f2937;font-size:13.5px}
 .np-btn:hover{background:#f3f4f6}
@@ -688,6 +695,18 @@ const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
 const uid = p => (p || 'id') + '_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
 const r2 = n => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
+/* שיעור המע״מ שהיה בתוקף בתאריך: 17% עד סוף 2024, 18% מ-1.1.2025 */
+function vatRateFor(iso, fallback) { return iso ? (iso >= '2025-01-01' ? 18 : 17) : (fallback == null ? 18 : fallback); }
+/* פירוק סכום כולל מע״מ לסכום ללא מע״מ, כך שהחישוב חזרה מחזיר בדיוק את אותו סכום.
+   רוב הסכומים מתפרקים לאגורות עגולות; כשאין פירוק כזה (למשל 9,450 ב-18%) נשמר ערך
+   מדויק יותר, שמוצג מעוגל אך שומר על סכום התשלום בבנק בדיוק כפי שהוא. */
+function netFromGross(gross, vatPct) {
+  const f = 1 + (Number(vatPct) || 0) / 100, g = r2(gross);
+  let n = r2(g / f);
+  for (let i = 0; i < 4 && r2(n * f) !== g; i++) n = r2(n + (g - r2(n * f)) / f);
+  if (r2(n * f) !== g) n = Math.round(g / f * 1e6) / 1e6;
+  return n;
+}
 const clone = o => JSON.parse(JSON.stringify(o));
 function num(v) {
   if (v === null || v === undefined) return null;
@@ -800,7 +819,7 @@ function defaultState() {
   };
 }
 let S = defaultState();
-const UI = { view: 'main', sbOpen: { yazam: true, mod: true, regular: true, ops: true, freelancer: true }, filters: {}, editing: null, flashRow: null, cfShowForecast: null };
+const UI = { view: 'main', sbOpen: { yazam: true, mod: true, regular: true, ops: true, freelancer: true }, filters: {}, tabPeriod: {}, navStack: [], navSkip: false, editing: null, flashRow: null, cfShowForecast: null };
 const sessionBlobs = {}; // docId -> objectURL (לסשן הנוכחי בלבד)
 
 /* ---------------- storage adapter (נפרד מהקוד) ---------------- */
@@ -893,13 +912,20 @@ function normalizeState(o) {
     const e = s.entities[id];
     if (!Array.isArray(e.rows)) e.rows = [];
     e.rows.forEach(migrateOffset);
-    // חוצץ אדם: מבנה ישן (ללא מע״מ + מע״מ% + תוספת/קיזוז) → סכום אחד
+    // חוצץ אדם: סכום אחד ← פירוק לסכום ללא מע״מ + ערך המע״מ. הסכום הכולל נשמר בדיוק,
+    // ושיעור המע״מ נקבע לפי התקופה של התשלום (17% עד 2024, 18% מ-2025).
     if (e.type === 'freelancer') e.rows.forEach(r => {
-      if (r.amount === undefined) {
-        const tot = (r.ov && r.ov.total != null && r.ov.total !== '') ? nz(r.ov.total) : r2(nz(r.net) * (1 + nz(r.vatPct) / 100));
-        r.amount = r2(tot + r2(Math.abs(nz(r.offAdd)) - Math.abs(nz(r.offDed))));
-        delete r.net; delete r.vatPct; delete r.offAdd; delete r.offDed; if (r.ov) delete r.ov.total;
+      if (r.amount !== undefined) {
+        const gross = Math.abs(nz(r.amount));
+        if (r.net === undefined || !nz(r.net)) {
+          const d = r.payDate || ((r.year && r.month) ? r.year + '-' + pad2(r.month) + '-01' : '');
+          r.vatPct = vatRateFor(d, nz(r.vatPct) || s.settings.vatDefault);
+          r.net = gross ? netFromGross(gross, r.vatPct) : 0;
+        }
+        delete r.amount;
       }
+      if (r.vatPct === undefined || r.vatPct === null || r.vatPct === '') r.vatPct = s.settings.vatDefault;
+      delete r.offAdd; delete r.offDed; if (r.ov) delete r.ov.total;
     });
   }
   // פנסיות: מבנה ישן (amount/depType) → מבנה חדש
@@ -1041,7 +1067,10 @@ const COLS = {
     { key: 'serial', label: 'מס״ד', type: 'serial' },
     { key: 'year', label: 'שנה', type: 'year' },
     { key: 'month', label: 'חודש', type: 'month' },
-    { key: 'amount', label: 'סכום', type: 'num', money: true },
+    { key: 'net', label: 'סכום ללא מע״מ', type: 'num', money: true },
+    { key: 'vatPct', label: 'מע״מ %', type: 'pct' },
+    { key: 'vatAmt', label: 'ערך המע״מ', type: 'computed', money: true },
+    { key: 'amount', label: 'סכום', type: 'computed', money: true },
     { key: 'projectName', label: 'פרויקט', type: 'text', w: 'l' },
     { key: 'taxReceiptNo', label: 'חשבונית מס / קבלה', type: 'doc' },
     { key: 'payDate', label: 'תאריך תשלום', type: 'date' },
@@ -1341,8 +1370,12 @@ function calcRow(kind, row) {
     }
     c.atlasNet = r2(c.base - nz(c.supplierPay));
   } else if (kind === 'freelancer') {
-    // חוצץ אדם: סכום אחד לתשלום, הסטטוס נקבע לפי תאריך התשלום
-    c.total = c.amount = Math.abs(nz(row.amount));
+    // חוצץ אדם: מוזן הסכום ללא מע״מ; ערך המע״מ והסכום הכולל מחושבים. הסטטוס לפי תאריך התשלום
+    // הסכום ללא מע״מ עשוי לשאת דיוק גבוה מאגורה (ראו netFromGross) – המע״מ והסכום
+    // הכולל מחושבים ממנו ישירות, כך שהסכום הכולל נשאר בדיוק סכום התשלום בפועל.
+    c.net = row.net === undefined && nz(row.amount) ? netFromGross(Math.abs(nz(row.amount)), vat) : Math.abs(nz(row.net));
+    c.vatAmt = r2(c.net * vat / 100);
+    c.total = c.amount = r2(c.net * (1 + vat / 100));
     c.base = c.amount;
     c.paid = !!row.payDate;
     // תשלום שיצא מחשבון הבנק – התנועה מגיעה לתזרים משורת הבנק המקושרת, ולכן אין כפילות
@@ -1619,7 +1652,8 @@ function tabFilters(tabId) { return UI.filters[tabId] || (UI.filters[tabId] = {}
 function applyFilters(t) {
   const f = tabFilters(t.tabId);
   const keys = Object.keys(f).filter(k => f[k]);
-  const items = t.rows.map(row => ({ row, c: calcRow(t.kind, row) }));
+  // חיתוך לתקופה הנבחרת (בנק / עצמאים) לפני המסננים – חל גם על הסיכומים והייצוא
+  const items = applyTabPeriod(t, t.rows.map(row => ({ row, c: calcRow(t.kind, row) })));
   if (!keys.length) return items;
   return items.filter(({ row, c }) => keys.every(k => {
     const col = t.cols.find(x => x.key === k);
@@ -1929,10 +1963,9 @@ function summariesHTML(t, items) {
       h += statHTML('נטו לאטלס', fmtMoney(sum(x => x.c.atlasNet)), 'green');
     }
   } else if (t.kind === 'freelancer') {
-    h += statHTML('ללא מע״מ', fmtMoney(sum(x => x.row.net)));
-    h += statHTML('כולל מע״מ', fmtMoney(sum(x => x.c.total)), 'gold');
-    h += statHTML('תוספות', '<span style="color:var(--green)">' + fmtMoney(sum(x => Math.abs(nz(x.row.offAdd)))) + '</span>');
-    h += statHTML('קיזוזים', '<span style="color:var(--red)">' + fmtMoney(sum(x => Math.abs(nz(x.row.offDed)))) + '</span>');
+    h += statHTML('סכום ללא מע״מ', fmtMoney(sum(x => x.c.net)));
+    h += statHTML('ערך המע״מ', fmtMoney(sum(x => x.c.vatAmt)));
+    h += statHTML('סכום כולל מע״מ', fmtMoney(sum(x => x.c.total)), 'gold');
     h += statHTML('שולם', fmtMoney(sum(x => x.row.payDate ? x.c.base : 0)), 'green');
     h += statHTML('טרם שולם', fmtMoney(sum(x => x.row.payDate ? 0 : x.c.base)), 'red');
   } else if (t.kind === 'salaries') {
@@ -2039,59 +2072,91 @@ const sessionFiles = {}; // docId -> File (לשמירה חוזרת בסשן הנ
 
 const DocFS = {
   supported: typeof window.showDirectoryPicker === 'function',
-  root: null,
+  /* רשימת תיקיות הבסיס המחוברות. כל נתיב של חוצץ נפתר מול התיקייה המתאימה לו,
+     כך שאפשר לחבר גם תיקייה עליונה אחת לכל החוצצים וגם כמה תיקיות נפרדות. */
+  roots: [],
+  get root() { return this.roots[0] || null; },
   get rootName() { return this.root ? this.root.name : ''; },
+  async persist() { try { await IDB.set('docRoots', this.roots); } catch (e) { } },
   async init() {
-    try { const h = await IDB.get('docRoot'); if (h) { this.root = h; return true; } } catch (e) { }
+    try {
+      const arr = await IDB.get('docRoots');
+      if (Array.isArray(arr) && arr.length) { this.roots = arr.filter(Boolean); return true; }
+      const h = await IDB.get('docRoot');           // מבנה ישן – תיקייה בודדת
+      if (h) { this.roots = [h]; await this.persist(); return true; }
+    } catch (e) { }
     return false;
   },
-  async connect() {
-    const h = await window.showDirectoryPicker({ id: 'atlas-docs', mode: 'readwrite' });
-    this.root = h;
-    try { await IDB.set('docRoot', h); } catch (e) { }
+  async sameRoot(a, b) { try { return a === b || (a.isSameEntry ? await a.isSameEntry(b) : a.name === b.name); } catch (e) { return a.name === b.name; } },
+  async addRoot(h) {
+    for (const r of this.roots) if (await this.sameRoot(r, h)) { this.roots = [r, ...this.roots.filter(x => x !== r)]; await this.persist(); return h; }
+    this.roots = [h, ...this.roots].slice(0, 12);
+    await this.persist();
     return h;
   },
-  async setRoot(h) { this.root = h; try { await IDB.set('docRoot', h); } catch (e) { } },
-  async disconnect() { this.root = null; try { await IDB.del('docRoot'); } catch (e) { } },
-  async permission(ask) {
-    if (!this.root) return false;
-    if (typeof this.root.queryPermission !== 'function') return true;
-    let p = await this.root.queryPermission({ mode: 'readwrite' });
+  async connect() { return this.addRoot(await window.showDirectoryPicker({ id: 'atlas-docs', mode: 'readwrite' })); },
+  async setRoot(h) { this.roots = [h]; await this.persist(); },
+  async disconnect() { this.roots = []; try { await IDB.del('docRoots'); await IDB.del('docRoot'); } catch (e) { } },
+  async removeRoot(name) { this.roots = this.roots.filter(r => r.name !== name); await this.persist(); },
+  async permissionFor(root, ask) {
+    if (!root) return false;
+    if (typeof root.queryPermission !== 'function') return true;
+    let p = await root.queryPermission({ mode: 'readwrite' });
     if (p === 'granted') return true;
     if (!ask) return false;
-    p = await this.root.requestPermission({ mode: 'readwrite' });
+    p = await root.requestPermission({ mode: 'readwrite' });
     return p === 'granted';
   },
-  /* פירוק נתיב החוצץ לתתי-תיקיות מתחת לתיקיית הבסיס */
+  async permission(ask, root) { return this.permissionFor(root || this.root, ask); },
+  /* האם כל התיקיות המחוברות כבר אושרו בסשן הנוכחי (אחרי רענון נדרש אישור בלחיצה) */
+  async pendingGrant() {
+    for (const r of this.roots) if (!(await this.permissionFor(r, false))) return true;
+    return false;
+  },
+  /* פירוק נתיב החוצץ לתתי-תיקיות מתחת לתיקיית הבסיס המתאימה.
+     נתיב מלא נבחן מול כל התיקיות המחוברות, ונבחרת ההתאמה העמוקה ביותר. */
   resolve(docPath) {
     const raw = String(docPath || '').trim();
     if (!raw) return { ok: false, error: 'לא הוגדר נתיב שמירת מסמכים לחוצץ' };
-    if (!this.root) return { ok: false, error: 'לא חוברה תיקיית מסמכים במחשב' };
+    if (!this.roots.length) return { ok: false, error: 'לא חוברה תיקיית מסמכים במחשב' };
     const clean = raw.replace(/^file:\/+/i, '');
-    let segs = clean.split(/[\\/]+/).filter(s => s && s !== '.');
-    if (segs.some(s => s === '..')) return { ok: false, error: 'הנתיב אינו יכול לכלול ".."' };
-    const isAbs = /^[a-zA-Z]:$/.test(segs[0] || '') || /^[\\/]/.test(clean);
-    if (isAbs) {
-      const rn = this.rootName.toLowerCase();
+    const all = clean.split(/[\\/]+/).filter(s => s && s !== '.');
+    if (all.some(s => s === '..')) return { ok: false, error: 'הנתיב אינו יכול לכלול ".."' };
+    const tidy = a => a.map(s => s.replace(/[<>:"|?*]/g, '_').trim()).filter(Boolean);
+    const isAbs = /^[a-zA-Z]:$/.test(all[0] || '') || /^[\\/]/.test(clean);
+    if (!isAbs) { const root = this.root; return { ok: true, segs: tidy(all), root, rootName: root.name }; }
+    let best = null;
+    for (const root of this.roots) {
+      const rn = root.name.toLowerCase();
       let idx = -1;
-      segs.forEach((s, i) => { if (s.toLowerCase() === rn) idx = i; });
-      if (idx < 0) return { ok: false, error: 'התיקייה שחוברה ("' + this.rootName + '") אינה חלק מהנתיב ' + raw + '. חבר תיקייה שמופיעה בנתיב, למשל "' + (segs[1] || segs[0]) + '".' };
-      segs = segs.slice(idx + 1);
+      all.forEach((s, i) => { if (s.toLowerCase() === rn) idx = i; });
+      if (idx < 0) continue;
+      if (!best || idx > best.idx) best = { idx, root };
     }
-    segs = segs.map(s => s.replace(/[<>:"|?*]/g, '_').trim()).filter(Boolean);
-    return { ok: true, segs };
+    if (!best) {
+      const names = this.roots.map(r => '"' + r.name + '"').join(', ');
+      return { ok: false, error: 'אף אחת מהתיקיות המחוברות (' + names + ') אינה חלק מהנתיב ' + raw + '. חבר תיקייה שמופיעה בנתיב – מומלץ את התיקייה העליונה, למשל "' + (all[1] || all[0]) + '", ואז כל החוצצים יעבדו איתה.' };
+    }
+    return { ok: true, segs: tidy(all.slice(best.idx + 1)), root: best.root, rootName: best.root.name };
   },
-  displayTarget(docPath) { const r = this.resolve(docPath); return r.ok ? [this.rootName, ...r.segs].join(' › ') : ''; },
+  displayTarget(docPath) { const r = this.resolve(docPath); return r.ok ? [r.rootName, ...r.segs].join(' › ') : ''; },
   async dirFor(docPath, create) {
     const r = this.resolve(docPath);
     if (!r.ok) throw new Error(r.error);
-    let d = this.root;
+    let d = r.root;
     for (const s of r.segs) d = await d.getDirectoryHandle(s, { create });
-    return { dir: d, segs: r.segs };
+    return { dir: d, segs: r.segs, root: r.root, rootName: r.rootName };
+  },
+  /* פתרון הנתיב + בקשת הרשאה לתיקייה המתאימה לו (דורש לחיצה של המשתמש) */
+  async ensure(docPath, ask) {
+    const r = this.resolve(docPath);
+    if (!r.ok) return { ok: false, error: r.error };
+    if (!(await this.permissionFor(r.root, ask !== false))) return { ok: false, error: 'לא ניתנה הרשאה לתיקייה ' + r.rootName, needGrant: true, root: r.root };
+    return { ok: true, root: r.root, rootName: r.rootName, segs: r.segs };
   },
   async exists(dir, name) { try { return await (await dir.getFileHandle(name)).getFile(); } catch (e) { return null; } },
   async save(docPath, file, opts) {
-    const { dir, segs } = await this.dirFor(docPath, true);
+    const { dir, segs, rootName } = await this.dirFor(docPath, true);
     let name = file.name.replace(/[\\/<>:"|?*]/g, '_');
     let note = '';
     const ex = await this.exists(dir, name);
@@ -2116,15 +2181,16 @@ const DocFS = {
     await w.write(file); await w.close();
     const check = await this.exists(dir, name);
     if (!check || check.size !== file.size) throw new Error('אימות הכתיבה נכשל עבור ' + name);
-    return { name, segs, note };
+    return { name, segs, rootName, note };
   },
   async read(docPath, name) { const { dir } = await this.dirFor(docPath, false); return (await dir.getFileHandle(name)).getFile(); },
-  async testWrite() {
+  async testWrite(root) {
     const name = '.atlas_write_test.txt';
-    const fh = await this.root.getFileHandle(name, { create: true });
+    root = root || this.root;
+    const fh = await root.getFileHandle(name, { create: true });
     const w = await fh.createWritable(); await w.write('ok ' + new Date().toISOString()); await w.close();
     const f = await fh.getFile(); const ok = f.size > 0;
-    try { await this.root.removeEntry(name); } catch (e) { }
+    try { await root.removeEntry(name); } catch (e) { }
     return ok;
   }
 };
@@ -2138,18 +2204,29 @@ function fsErrText(e) {
 async function connectDocFolder(silent) {
   if (!DocFS.supported) { toast('שמירה לתיקייה נתמכת רק ב-Chrome או Edge במחשב', 'err', 7000); return false; }
   try {
-    await DocFS.connect();
-    if (!silent) toast('תיקיית המסמכים חוברה: ' + DocFS.rootName, 'ok');
+    const h = await DocFS.connect();
+    if (!silent) toast('תיקיית המסמכים חוברה: ' + h.name + ' · היא תיזכר ותשמש בכל החוצצים שהנתיב שלהם נמצא בתוכה', 'ok', 6000);
     render();
     return true;
   } catch (e) { toast(fsErrText(e), 'warn'); return false; }
+}
+/* אחרי רענון הדפדפן שומר את התיקיות אך מבקש אישור מחדש בלחיצה אחת – בלי לבחור שוב */
+async function grantDocFolders() {
+  let ok = 0, fail = 0;
+  for (const r of DocFS.roots) { try { if (await DocFS.permissionFor(r, true)) ok++; else fail++; } catch (e) { fail++; } }
+  UI.fsGrant = await DocFS.pendingGrant();
+  render();
+  if (ok && !fail) toast('הגישה אושרה ל-' + ok + ' תיקיות – הנתיבים בכל החוצצים פעילים', 'ok', 5000);
+  else if (ok) toast('אושרו ' + ok + ' תיקיות, ' + fail + ' נותרו ללא אישור', 'warn', 6000);
+  else toast('הגישה לא אושרה', 'warn');
+  return ok > 0;
 }
 /* שמירת מסמך מקושר לתיקייה (בזמן גרירה או שמירה חוזרת) */
 async function saveDocToFolder(t, doc, file) {
   const r = await DocFS.save(t.holder.docPath, file);
   doc.fileName = r.name;
   doc.saved = true;
-  doc.savedTo = [DocFS.rootName, ...r.segs].join('\\');
+  doc.savedTo = [r.rootName, ...r.segs].join('\\');
   doc.savedAt = new Date().toISOString();
   delete doc.saveError;
   return r;
@@ -2207,16 +2284,27 @@ function renderSidebar() {
   }
   h += '<div class="sb-group' + (UI.sbOpen.ops ? '' : ' closed') + '"><div class="sb-group-h" data-grp="ops"><span class="chev">▼</span>תפעול</div><div class="sb-children">' +
     Object.keys(OPS).map(k => item('ops:' + k, OPS[k], S.ops[k].rows.length)).join('') + '</div></div>';
+  hrSeedOnce();
   const ppl = allPeople(personState().showArchived);
   const arch = allPeople(true).filter(x => x.archived).length;
+  // היררכיה: כ״א › שכירים / עצמאים › אדם
+  const personItem = pp => {
+    const id = 'person:' + pp.key;
+    const rows = personRows(pp);
+    const n = rows.sal.length + rows.pen.length + rows.own.length;
+    return '<div class="sb-item' + (UI.view === id ? ' active' : '') + '" data-nav="' + id + '" title="' + esc(pp.roles.join(' · ')) + '">' + esc(pp.name) +
+      (pp.archived ? ' <span class="muted">(ארכיון)</span>' : '') + '<span class="sb-count">' + n + '</span></div>';
+  };
+  let hrInner = '';
+  for (const kind of ['salaried', 'freelancer']) {
+    const list = ppl.filter(pp => personHrKind(pp) === kind);
+    const key = 'hr:' + kind;
+    const open = UI.sbOpen[key] === undefined ? true : UI.sbOpen[key];
+    hrInner += '<div class="sb-group sb-client' + (open ? '' : ' closed') + '"><div class="sb-group-h sb-client-h" data-grp="' + key + '" title="' + HR_KINDS[kind] + '"><span class="chev">▼</span><span class="sb-label">' + HR_KINDS[kind] + '</span><span class="sb-count">' + list.length + '</span></div><div class="sb-children">' +
+      (list.length ? list.map(personItem).join('') : '<div class="sb-empty">אין</div>') + '</div></div>';
+  }
   h += '<div class="sb-group' + (UI.sbOpen.freelancer ? '' : ' closed') + '"><div class="sb-group-h" data-grp="freelancer"><span class="chev">▼</span>כ״א<span class="sb-count">' + ppl.length + '</span><button class="sb-add" data-newperson="1" title="הוספת אדם">＋</button></div><div class="sb-children">' +
-    (ppl.length ? ppl.map(pp => {
-      const id = 'person:' + pp.key;
-      const rows = personRows(pp);
-      const n = rows.sal.length + rows.pen.length + rows.own.length;
-      return '<div class="sb-item' + (UI.view === id ? ' active' : '') + '" data-nav="' + id + '" title="' + esc(pp.roles.join(' · ')) + '">' + esc(pp.name) +
-        (pp.archived ? ' <span class="muted">(ארכיון)</span>' : '') + '<span class="sb-count">' + n + '</span></div>';
-    }).join('') : '<div class="sb-empty">אין עדיין – ＋ ליד הכותרת</div>') +
+    (ppl.length ? hrInner : '<div class="sb-empty">אין עדיין – ＋ ליד הכותרת</div>') +
     (arch ? '<div class="sb-item sb-arch" data-arch="1"><span class="muted">' + (personState().showArchived ? 'הסתרת ארכיון' : 'הצגת ארכיון (' + arch + ')') + '</span></div>' : '') +
     '</div></div>';
   const alN = alertCount();
@@ -2246,6 +2334,8 @@ function clientGroupKey(type, client) { return 'c:' + type + ':' + (client || ''
 function navigate(view, rowId) {
   closePopups();
   setDrawer(false);
+  // מסך קודם לכפתור "חזרה" – לא נרשם כשחוזרים אחורה ולא כשנשארים באותו מסך
+  if (UI.navSkip) UI.navSkip = false; else navPush(UI.view, view);
   if (String(view).startsWith('person:')) {
     personState().key = String(view).slice(7);
     UI.sbOpen.freelancer = true;
@@ -2329,6 +2419,12 @@ function renderTopStats() {
 }
 
 /* ---------------- tab screen ---------------- */
+/* תווית סוג החוצץ. בחוצץ אדם מוצג גם הסיווג בכ״א (שכיר / עצמאי) */
+function tabKindLabel(t) {
+  if (t.kind !== 'freelancer') return TYPE_LABEL[t.kind];
+  const p = allPeople(true).find(x => x.entId === t.entity.id);
+  return 'חוצץ תשלומים · ' + (p && personHrKind(p) === 'salaried' ? 'שכיר' : 'עצמאי');
+}
 function renderTab(v, t) {
   let items = applyFilters(t);
   // בנק: תצוגה לפי התאריך בפועל, כדי שעמודת העו״ש תרוץ לפי סדר התנועות
@@ -2339,9 +2435,10 @@ function renderTab(v, t) {
   if (PROJECT_TYPES.includes(t.kind) && t.entity && t.entity.rowOrder === 'desc')
     items = items.slice().sort((a, b) => (String(b.row.year || '') + String(b.row.month || '')).localeCompare(String(a.row.year || '') + String(a.row.month || '')) || nz(b.row.serial) - nz(a.row.serial));
   const e = t.entity;
-  let h = '<div class="crumb"' + (['yazam', 'mod'].includes(t.kind) ? ' data-ptype="' + t.kind + '"' : '') + '><h2>' + esc(t.name) + '</h2><span class="meta">' + (t.isOps ? 'תפעול · חוצץ מערכת קבוע' : TYPE_LABEL[t.kind] + (e.client ? ' · לקוח: ' + esc(e.client) : '') + (e.owner ? ' · אחראי: ' + esc(e.owner) : '') + (PROJECT_TYPES.includes(t.kind) && num(e.termDays) !== null ? ' · תנאי תשלום +' + esc(e.termDays) : '') + (['yazam', 'mod'].includes(t.kind) && num(e.supplierPctDefault) !== null ? ' · גבייה מספק ' + esc(e.supplierPctDefault) + '%' : '') + ' · מזהה ' + esc(e.id)) + '</span><span class="grow"></span>';
+  let h = '<div class="crumb"' + (['yazam', 'mod'].includes(t.kind) ? ' data-ptype="' + t.kind + '"' : '') + '>' + backBtnHTML() + '<h2>' + esc(t.name) + '</h2><span class="meta">' + (t.isOps ? 'תפעול · חוצץ מערכת קבוע' : tabKindLabel(t) + (e.client ? ' · לקוח: ' + esc(e.client) : '') + (e.owner ? ' · אחראי: ' + esc(e.owner) : '') + (PROJECT_TYPES.includes(t.kind) && num(e.termDays) !== null ? ' · תנאי תשלום +' + esc(e.termDays) : '') + (['yazam', 'mod'].includes(t.kind) && num(e.supplierPctDefault) !== null ? ' · גבייה מספק ' + esc(e.supplierPctDefault) + '%' : '') + ' · מזהה ' + esc(e.id)) + '</span><span class="grow"></span>';
   if (!t.isOps) h += '<button class="btn sm" data-act="editent">✎ פרטי חוצץ</button><button class="btn sm danger" data-act="delent">🗑 מחיקת חוצץ</button>';
   h += '</div>';
+  if (tabSupportsPeriod(t)) h += tabPeriodBarHTML(t, items.length);
   h += tabMessagesHTML(t, items);
   h += '<div class="toolbar"><button class="btn primary" data-act="addrow">➕ הוספת שורה</button><button class="btn gold" data-act="save">💾 שמירה</button>' +
     '<button class="btn" data-act="xlsx">📗 Excel</button><button class="btn" data-act="pdf">📕 PDF</button>' +
@@ -2359,10 +2456,11 @@ function renderTab(v, t) {
   if (t.kind === 'mod') h += ordersPanelHTML(t);
   h += summariesHTML(t, items);
   h += docBarHTML(t);
-  if (t.kind === 'freelancer') h += '<div class="layout-side"><div class="main-col">' + gridHTML(t, items) + '</div>' + yearPanelHTML(t, items) + '</div>';
+  if (t.kind === 'freelancer') h += '<div class="layout-side"><div class="main-col">' + gridHTML(t, items) + '</div>' + yearPanelHTML(t) + '</div>';
   else if (t.kind === 'bank') h += gridHTML(t, items, { rowClass: (row, c) => c.fromAuth ? 'viabank' : '' });
   else h += gridHTML(t, items);
   v.innerHTML = yearsDatalist() + (t.kind === 'bank' ? bankPartyList() : '') + '<div id="msgs"></div>' + h;
+  bindTabPeriodInputs(t);
 }
 /* ---------------- הזמנות עבודה – לוח מעל הטבלה (משהב״ט) ---------------- */
 function orderCardHTML(e, o) {
@@ -2499,11 +2597,19 @@ function tabMessagesHTML(t, items) {
   }
   return m.length ? '<div id="msgArea2" style="display:flex;flex-direction:column;gap:6px;margin-bottom:10px">' + m.map(x => '<div class="msg ' + x[0] + '">' + x[1] + '</div>').join('') + '</div>' : '';
 }
-function yearPanelHTML(t, items) {
+/* לוח השנים של חוצץ עצמאי – תמיד כל השנים (גם כשמוצגת תקופה אחת), ולחיצה מסננת לשנה */
+function yearPanelHTML(t) {
   const by = {};
-  items.forEach(({ row, c }) => { const y = row.year || '—'; by[y] = by[y] || { net: 0, total: 0, paid: 0 }; by[y].total = r2(by[y].total + c.base); if (row.payDate) by[y].paid = r2(by[y].paid + c.base); });
+  t.rows.forEach(row => { const c = calcRow(t.kind, row); const y = row.year || '—'; by[y] = by[y] || { total: 0, paid: 0 }; by[y].total = r2(by[y].total + c.base); if (row.payDate) by[y].paid = r2(by[y].paid + c.base); });
   const ys = Object.keys(by).sort().reverse();
-  return '<div class="side-panel"><h4>סה״כ לפי שנה</h4>' + (ys.length ? '<table><tr><td class="muted">שנה</td><td class="muted">סה״כ</td><td class="muted">שולם</td></tr>' + ys.map(y => '<tr><td><b>' + esc(y) + '</b></td><td>' + fmtMoney(by[y].total) + '</td><td class="muted">' + fmtMoney(by[y].paid) + '</td></tr>').join('') + '</table>' : '<div class="muted">אין נתונים</div>') + '</div>';
+  const p = tabPeriod(t.tabId), b = tabPeriodBounds(p);
+  const actY = b && b.from.slice(0, 4) === b.to.slice(0, 4) ? b.from.slice(0, 4) : '';
+  const tot = r2(ys.reduce((a, y) => a + by[y].total, 0)), paid = r2(ys.reduce((a, y) => a + by[y].paid, 0));
+  return '<div class="side-panel"><h4>סה״כ לפי שנה</h4>' + (ys.length
+    ? '<table><tr><td class="muted">שנה</td><td class="muted">סה״כ</td><td class="muted">שולם</td></tr>' +
+      ys.map(y => '<tr' + (y === actY ? ' class="hl-row"' : '') + '><td><a href="#" class="emp-link" data-act="tpyear" data-y="' + esc(y) + '" title="הצגת שנת ' + esc(y) + ' בלבד"><b>' + esc(y) + '</b></a></td><td>' + fmtMoney(by[y].total) + '</td><td class="muted">' + fmtMoney(by[y].paid) + '</td></tr>').join('') +
+      '<tr class="tot-row"><td><a href="#" class="emp-link" data-act="tpyear" data-y="" title="הצגת כל התקופות"><b>הכל</b></a></td><td>' + fmtMoney(tot) + '</td><td class="muted">' + fmtMoney(paid) + '</td></tr></table>'
+    : '<div class="muted">אין נתונים</div>') + '</div>';
 }
 
 /* ---------------- documents ---------------- */
@@ -2513,10 +2619,11 @@ function docTargetHTML(t) {
   const path = (t.holder.docPath || '').trim();
   if (!DocFS.supported) return '<span class="doctarget warn" title="פתח את האתר ב-Chrome או Edge במחשב">⚠ הדפדפן לא תומך בשמירה לתיקייה</span>';
   if (!path) return '<span class="doctarget warn">⚠ הגדר נתיב</span>';
-  if (!DocFS.root) return '<span class="doctarget warn" title="בחר פעם אחת תיקייה שמופיעה בנתיב (למשל ' + esc((path.split(/[\\/]+/).filter(Boolean)[1]) || path) + '). הדפדפן יזכור אותה.">⚠ תיקייה לא מחוברת <button class="btn sm gold" data-act="fsconnect">📁 חיבור</button></span>';
+  if (!DocFS.roots.length) return '<span class="doctarget warn" title="בחר פעם אחת תיקייה שמופיעה בנתיב – מומלץ את העליונה (למשל ' + esc((path.split(/[\\/]+/).filter(Boolean)[1]) || path) + '), ואז כל החוצצים יעבדו איתה. הדפדפן יזכור אותה.">⚠ תיקייה לא מחוברת <button class="btn sm gold" data-act="fsconnect">📁 חיבור</button></span>';
   const r = DocFS.resolve(path);
-  if (!r.ok) return '<span class="doctarget warn" title="' + esc(r.error) + '">⚠ הנתיב לא בתוך ' + esc(DocFS.rootName) + ' <button class="btn sm" data-act="fsconnect">תיקייה אחרת</button></span>';
-  return '<span class="doctarget ok" title="תיקיית בסיס: ' + esc(DocFS.rootName) + '">📁 ' + esc(DocFS.displayTarget(path)) + '</span>';
+  if (!r.ok) return '<span class="doctarget warn" title="' + esc(r.error) + '">⚠ הנתיב לא בתוך התיקיות המחוברות <button class="btn sm gold" data-act="fsconnect">📁 חיבור תיקייה</button></span>';
+  if (UI.fsGrant) return '<span class="doctarget warn" title="הדפדפן מבקש אישור מחדש לתיקייה אחרי רענון – לחיצה אחת ואין צורך לבחור שוב את התיקייה.">📁 ' + esc(DocFS.displayTarget(path)) + ' <button class="btn sm gold" data-act="fsgrant">אישור גישה</button></span>';
+  return '<span class="doctarget ok" title="תיקיית בסיס: ' + esc(r.rootName) + '">📁 ' + esc(DocFS.displayTarget(path)) + '</span>';
 }
 function docBarHTML(t) {
   const docs = Object.values(S.docs).filter(d => d.tabId === t.tabId);
@@ -2550,10 +2657,11 @@ async function openDoc(t, row, field) {
   if (!doc) { toast('לא נמצא מסמך מקושר למספר ' + val + '. גרור את קובץ ה-PDF לאזור המסמכים כדי לקשר אותו.', 'warn', 5000); return; }
   // 1) פתיחה מתוך תיקיית המסמכים שחוברה (כולל תת-תיקייה, למשל תיקיית עובד)
   const dp = docPathOf(t, doc);
-  if (DocFS.root && t.holder.docPath && DocFS.resolve(dp).ok) {
+  if (DocFS.roots.length && t.holder.docPath && DocFS.resolve(dp).ok) {
     try {
-      const granted = await DocFS.permission(true);
+      const granted = await DocFS.permission(true, DocFS.resolve(dp).root);
       if (!granted) throw Object.assign(new Error('no permission'), { name: 'NotAllowedError' });
+      UI.fsGrant = false;
       const f = await DocFS.read(dp, doc.fileName);
       const url = URL.createObjectURL(f) + (doc.page ? '#page=' + doc.page : '');
       const w = window.open(url, '_blank');
@@ -2569,7 +2677,7 @@ async function openDoc(t, row, field) {
   // 3) ניסיון אחרון – קישור file:// לפי הנתיב
   const url = resolveDocURL(t, doc);
   if (!url) { toast('לא הוגדר נתיב שמירת מסמכים לחוצץ – לא ניתן לפתוח את ' + doc.fileName, 'err', 5000); return; }
-  if (!DocFS.root) { toast('חבר את תיקיית המסמכים (בחוצץ או בהגדרות) כדי לפתוח את ' + doc.fileName, 'warn', 6000); }
+  if (!DocFS.roots.length) { toast('חבר את תיקיית המסמכים (בחוצץ או בהגדרות) כדי לפתוח את ' + doc.fileName, 'warn', 6000); }
   window.open(url, '_blank');
 }
 
@@ -2663,7 +2771,7 @@ async function handlePdfFiles(t, files) {
   let where;
   if (!DocFS.supported) where = '<div class="msg err">הדפדפן אינו תומך בשמירה לתיקייה (נדרש Chrome או Edge). המסמכים יקושרו בלבד.</div>';
   else if (!path) where = '<div class="msg err">לא הוגדר נתיב מסמכים לחוצץ – הקבצים יקושרו אך לא יישמרו. הגדר נתיב ונסה שוב.</div>';
-  else if (!DocFS.root) where = '<div class="msg warn">בלחיצה על ״שמור וקשר״ ייפתח חלון בחירת תיקייה: בחר תיקייה שמופיעה בנתיב <b dir="ltr">' + esc(path) + '</b>. הבחירה נדרשת פעם אחת בלבד.</div>';
+  else if (!DocFS.roots.length) where = '<div class="msg warn">בלחיצה על ״שמור וקשר״ ייפתח חלון בחירת תיקייה: בחר תיקייה שמופיעה בנתיב <b dir="ltr">' + esc(path) + '</b> – מומלץ את העליונה, ואז כל החוצצים יעבדו איתה. הבחירה נדרשת פעם אחת בלבד.</div>';
   else { const r = DocFS.resolve(path); where = r.ok ? '<div class="msg info">הקבצים יישמרו אל: <b>' + esc(DocFS.displayTarget(path)) + '</b> (תיקיות חסרות ייווצרו)</div>' : '<div class="msg err">' + esc(r.error) + '</div>'; }
   const body = where + '<p>בחר לאיזו שורה ולאיזה מספר מסמך לקשר כל קובץ. התאמה אוטומטית בוצעה לפי מספרים בשם הקובץ, ותאריך המסמך נקרא מתוך ה-PDF.</p><table class="simple"><tr><th>קובץ</th><th>שורה</th><th>שדה מסמך</th><th>מספר מסמך</th><th>תאריך המסמך</th><th>יעד התאריך בשורה</th></tr>' +
     files.map((f, i) => '<tr data-i="' + i + '"><td>' + esc(f.name) + (matches[i].rowId ? ' <span class="status yes">הותאם</span>' : '') + '</td><td><select class="lr">' + rowOpts(matches[i].rowId) + '</select></td><td><select class="lf">' + fieldOpts(matches[i].field) + '</select></td><td><input class="ln" type="text" value="' + esc(matches[i].number) + '" style="width:110px;direction:ltr"></td>' +
@@ -2724,8 +2832,9 @@ async function commitPdfLinks(t, files, bg) {
   else if (!path) why = 'לא הוגדר נתיב מסמכים לחוצץ';
   else {
     try {
-      if (!DocFS.root) await DocFS.connect();
-      canSave = await DocFS.permission(true);
+      if (!DocFS.roots.length || !DocFS.resolve(path).ok) await DocFS.connect();
+      canSave = await DocFS.permission(true, (DocFS.resolve(path) || {}).root);
+      if (canSave) UI.fsGrant = false;
       if (!canSave) why = 'לא ניתנה הרשאת כתיבה לתיקייה';
       else { const r = DocFS.resolve(path); if (!r.ok) { canSave = false; why = r.error; } }
     } catch (e) { why = fsErrText(e); }
@@ -2789,6 +2898,7 @@ function projectFormHTML(v, withCards) {
     '<label for="neName" id="neNameLbl">שם הפרויקט</label><div><input id="neName" type="text" value="' + esc(v.name || '') + '"></div>' +
     '<label for="neClient" class="np-proj">לקוח</label><div class="np-proj"><input id="neClient" type="text" list="clientsList" placeholder="לדוגמה: גשם, משהב״ט" value="' + esc(v.client || '') + '"></div>' +
     '<label for="neOwner" id="neOwnerLbl">אחראי</label><div><input id="neOwner" type="text" value="' + esc(v.owner || '') + '"></div>' +
+    '<label for="neHr" class="np-person">סיווג בכ״א</label><div class="np-person"><select id="neHr"><option value="freelancer"' + (v.hrKind === 'salaried' ? '' : ' selected') + '>עצמאי</option><option value="salaried"' + (v.hrKind === 'salaried' ? ' selected' : '') + '>שכיר</option></select></div>' +
     '<label for="neTerm" class="np-proj">תנאי תשלום (ימים)</label><div class="np-proj"><input id="neTerm" class="np-short" type="text" inputmode="numeric" value="' + esc(v.termDays == null ? '' : v.termDays) + '"></div>' +
     '<label for="nePct" class="np-sup">% גבייה מספק (ברירת מחדל)</label><div class="np-sup"><input id="nePct" class="np-short" type="text" inputmode="decimal" placeholder="לדוגמה: 12" value="' + esc(v.supplierPctDefault == null ? '' : v.supplierPctDefault) + '"></div>' +
     '<label class="np-mod">עמודות נוספות</label><div class="np-mod"><label style="font-weight:400;font-size:13px;white-space:normal"><input type="checkbox" id="neOffroad" style="width:auto;height:auto"' + (v.hasOffroad ? ' checked' : '') + '> רכב שטח – עמודה נפרדת בטבלה</label></div>' +
@@ -2798,7 +2908,10 @@ function projectFormHTML(v, withCards) {
 function readProjectForm(bg, type) {
   const name = $('#neName', bg).value.trim();
   if (!name) { toast(type === 'freelancer' ? 'יש להזין שם' : 'יש להזין שם פרויקט', 'err'); $('#neName', bg).focus(); return null; }
-  if (type === 'freelancer') return { name, client: '', owner: $('#neOwner', bg).value.trim(), termDays: null, supplierPctDefault: null, docPath: $('#nePath', bg).value.trim() };
+  if (type === 'freelancer') {
+    const hr = $('#neHr', bg);
+    return { name, client: '', owner: $('#neOwner', bg).value.trim(), termDays: null, supplierPctDefault: null, docPath: $('#nePath', bg).value.trim(), hrKind: hr && hr.value === 'salaried' ? 'salaried' : 'freelancer' };
+  }
   const termRaw = $('#neTerm', bg).value.trim(), pctRaw = $('#nePct', bg).value.trim();
   const termDays = termRaw === '' ? null : num(termRaw);
   if (termRaw !== '' && (termDays === null || termDays < 0 || !Number.isInteger(termDays))) { toast('תנאי תשלום חייבים להיות מספר ימים שלם', 'err'); $('#neTerm', bg).focus(); return null; }
@@ -2824,9 +2937,10 @@ function openNewEntityModal(preType) {
     $$('.np-sup', bg).forEach(el => el.classList.toggle('hidden', type === 'regular' || isPerson));
     $$('.np-proj', bg).forEach(el => el.classList.toggle('hidden', isPerson));
     $$('.np-mod', bg).forEach(el => el.classList.toggle('hidden', type !== 'mod'));
+    $$('.np-person', bg).forEach(el => el.classList.toggle('hidden', !isPerson));
     $('#neNameLbl', bg).textContent = isPerson ? 'שם האדם' : 'שם הפרויקט';
     $('#neOwnerLbl', bg).textContent = isPerson ? 'תפקיד / הערה' : 'אחראי';
-    $('#npTitle', bg).textContent = isPerson ? 'אדם חדש (עצמאי)' : 'פרויקט חדש';
+    $('#npTitle', bg).textContent = isPerson ? 'אדם חדש' : 'פרויקט חדש';
     $('#npCreate', bg).textContent = isPerson ? 'צור חוצץ אדם' : 'צור פרויקט';
     $('#nePath', bg).placeholder = isPerson ? 'לדוגמה: חשבוניות/כ״א/שם האדם' : 'לדוגמה: חשבוניות/גשם/הפרויקט החדש';
   };
@@ -2840,11 +2954,14 @@ function openNewEntityModal(preType) {
     const v = readProjectForm(bg, type); if (!v) return;
     if (Object.values(S.entities).some(e => e.type === type && e.name === v.name) && !confirm(type === 'freelancer' ? 'כבר קיים אדם בשם זה. ליצור בכל זאת?' : 'כבר קיים פרויקט בשם זה בקבוצה. ליצור בכל זאת? (המזהה הפנימי יהיה שונה)')) return;
     const id = uid(type);
+    const hrKind = v.hrKind; delete v.hrKind;
     S.entities[id] = Object.assign({ id, type }, v, { supplierForNewRows: type !== 'regular' && v.supplierPctDefault !== null, createdAt: new Date().toISOString(), rows: [] });
+    // אדם חדש נרשם מיד בתת-הקבוצה שנבחרה (שכירים / עצמאים)
+    if (type === 'freelancer') setPersonHrKind({ name: v.name, empId: '' }, hrKind);
     S.entityOrder.push(id);
     UI.sbOpen[type] = true;
     closeModal(); markDirty();
-    toast('נוצר ' + TYPE_LABEL[type] + ': ' + v.name + (v.docPath ? '' : ' (ללא נתיב מסמכים)'), 'ok');
+    toast((type === 'freelancer' ? 'נוצר חוצץ תשלומים ל' + (hrKind === 'salaried' ? 'שכיר' : 'עצמאי') + ': ' : 'נוצר ' + TYPE_LABEL[type] + ': ') + v.name + (v.docPath ? '' : ' (ללא נתיב מסמכים)'), 'ok');
     navigate(id);
   };
 }
@@ -3039,7 +3156,7 @@ function setField(t, rowId, key, raw, type, isOv) {
   if (t.kind === 'authorities' && ['status', 'payDate', 'dueDate', 'amount', 'method', 'authType', 'authName', 'action', 'year', 'month'].includes(key)) setTimeout(() => { authBankSync(row); render(); }, 0);
   // תשלום לעצמאי: עריכה בחוצץ האדם מעדכנת את שורת הבנק, ועריכה בבנק מעדכנת את שורת האדם.
   // הסנכרון רץ מיד (ולא ב-setTimeout) כדי שהמצב יהיה עקבי כבר ברינדור שבסוף הפונקציה.
-  if (t.kind === 'freelancer' && ['amount', 'payDate', 'year', 'month', 'projectName', 'taxReceiptNo'].includes(key)) freeBankSync(row, t.entity);
+  if (t.kind === 'freelancer' && ['net', 'vatPct', 'amount', 'payDate', 'year', 'month', 'projectName', 'taxReceiptNo'].includes(key)) freeBankSync(row, t.entity);
   if (t.kind === 'bank' && ['txType', 'party', 'income', 'expense', 'date', 'forMonth', 'docNo'].includes(key) && ((row.txType || '') === FREE_TX_TYPE || row.freeRowId)) bankFreeSync(row);
   if (t.kind === 'bank' && row.authRowId) {
     const a = S.ops.authorities.rows.find(x => x.id === row.authRowId);
@@ -3097,6 +3214,8 @@ $('#view').addEventListener('click', e => {
   const actEl = e.target.closest('[data-act]');
   if (!actEl) return;
   const act = actEl.dataset.act;
+  if (act === 'navback') { e.preventDefault(); navBack(); return; }
+  if (act.startsWith('tp') && tabPeriodAction(act, actEl, tabInfo(UI.view))) { e.preventDefault(); return; }
   if (['main', 'settings', 'anomalies', 'alerts'].includes(UI.view)) { viewAction(act, actEl, e); return; }
   if (String(UI.view).startsWith('person:')) { personAction(act, actEl, e); return; }
   const t = tabInfo(UI.view); if (!t) return;
@@ -3202,14 +3321,16 @@ $('#view').addEventListener('click', e => {
     case 'savepath': { const inp = $('[data-act="docpath"]'); t.holder.docPath = inp.value.trim(); markDirty(); render(); toast('נתיב המסמכים עודכן', 'ok'); break; }
     case 'unlinkdoc': delete S.docs[actEl.dataset.doc]; markDirty(); render(); break;
     case 'fsconnect': connectDocFolder(); break;
+    case 'fsgrant': grantDocFolders(); break;
     case 'toggledocs': UI.docListOpen = UI.docListOpen || {}; UI.docListOpen[t.tabId] = !UI.docListOpen[t.tabId]; render(); break;
     case 'resavedoc': {
       const doc = S.docs[actEl.dataset.doc], file = sessionFiles[actEl.dataset.doc];
       if (!doc || !file) return;
       (async () => {
         try {
-          if (!DocFS.root) await DocFS.connect();
-          if (!(await DocFS.permission(true))) throw Object.assign(new Error(''), { name: 'NotAllowedError' });
+          if (!DocFS.roots.length || !DocFS.resolve(t.holder.docPath).ok) await DocFS.connect();
+          if (!(await DocFS.permission(true, (DocFS.resolve(t.holder.docPath) || {}).root))) throw Object.assign(new Error(''), { name: 'NotAllowedError' });
+          UI.fsGrant = false;
           const r = await saveDocToFolder(t, doc, file);
           markDirty(); render(); toast('נשמר אל ' + doc.savedTo + (r.note ? ' · ' + r.note : ''), 'ok', 6000);
         } catch (e) { doc.saveError = fsErrText(e); render(); toast('השמירה נכשלה: ' + doc.saveError, 'err', 7000); }
@@ -3409,7 +3530,7 @@ function goBackFromEmployee(st) {
 /* ---------------- תצוגה ---------------- */
 function renderSalaries(v, t) {
   const st = salState();
-  let h = '<div class="crumb"><h2>משכורות</h2><span class="meta">חוצץ המקור הבלעדי לשכר · תנועה נוצרת בגיליון הראשי רק למשכורת שסומנה ״שולם״ ויש לה תאריך תשלום</span><span class="grow"></span>' +
+  let h = '<div class="crumb">' + backBtnHTML() + '<h2>משכורות</h2><span class="meta">חוצץ המקור הבלעדי לשכר · תנועה נוצרת בגיליון הראשי רק למשכורת שסומנה ״שולם״ ויש לה תאריך תשלום</span><span class="grow"></span>' +
     '<button class="btn sm" data-act="employees">👥 ניהול עובדים (' + S.employees.length + ')</button></div>';
   h += backBarHTML(st, 'salback');
   const paidNoDate = t.rows.filter(r => r.status && !r.payDate).length;
@@ -3628,7 +3749,7 @@ async function commitPayslips(file, plan, bg) {
   const path = (t.holder.docPath || '').trim();
   if (!DocFS.supported) why = 'הדפדפן אינו תומך בשמירה לתיקייה';
   else if (!path) why = 'לא הוגדר נתיב שמירת תלושים';
-  else { try { if (!DocFS.root) await DocFS.connect(); canSave = await DocFS.permission(true); if (canSave && !DocFS.resolve(path).ok) { canSave = false; why = DocFS.resolve(path).error; } else if (!canSave) why = 'לא ניתנה הרשאה לתיקייה'; } catch (e) { why = fsErrText(e); } }
+  else { try { if (!DocFS.roots.length || !DocFS.resolve(path).ok) await DocFS.connect(); const rr = DocFS.resolve(path); if (!rr.ok) { canSave = false; why = rr.error; } else { canSave = await DocFS.permission(true, rr.root); if (canSave) UI.fsGrant = false; else why = 'לא ניתנה הרשאה לתיקייה ' + rr.rootName; } } catch (e) { why = fsErrText(e); } }
   // פיצול: עמוד לכל עובד → קובץ נפרד בתיקייה בשם העובד
   let src = null, splitWhy = '';
   if (window.PDFLib) { try { src = await window.PDFLib.PDFDocument.load(await file.arrayBuffer(), { ignoreEncryption: true }); } catch (e) { splitWhy = e.message; } }
@@ -3643,7 +3764,7 @@ async function commitPayslips(file, plan, bg) {
     const one = new File([file], 'ריכוז תלושים ' + ym.slice(5, 7) + '-' + ym.slice(0, 4) + '.pdf', { type: 'application/pdf' });
     try {
       const r = await DocFS.save(path + '/' + sub, one, { overwrite: true, fallbackName: 'payslips_' + ym.slice(5, 7) + '-' + ym.slice(0, 4) + '.pdf' });
-      fullSaves.push([DocFS.rootName, ...r.segs, r.name].join('\\'));
+      fullSaves.push([r.rootName, ...r.segs, r.name].join('\\'));
       if (!fullSaved) { fullSaved = true; fullName = r.name; fullSub = sub; fullTo = fullSaves[0]; }
     } catch (e) { saveErrors.push('ריכוז ' + monthLabel(ym) + ': ' + fsErrText(e)); }
   }
@@ -3679,7 +3800,7 @@ async function commitPayslips(file, plan, bg) {
       Object.assign(doc, { fileName: fname, subdir: folder, size: one.size });
       sessionBlobs[id] = URL.createObjectURL(one); sessionFiles[id] = one;
       if (canSave) {
-        try { const r = await DocFS.save(path + '/' + folder, one, { overwrite: true, fallbackName: 'payslip_' + p.month.slice(5, 7) + '-' + p.month.slice(0, 4) + '_' + (emp.empNo || 'emp') + '.pdf' }); Object.assign(doc, { fileName: r.name, saved: true, savedTo: [DocFS.rootName, ...r.segs, r.name].join('\\'), savedAt: new Date().toISOString() }); savedCount++; }
+        try { const r = await DocFS.save(path + '/' + folder, one, { overwrite: true, fallbackName: 'payslip_' + p.month.slice(5, 7) + '-' + p.month.slice(0, 4) + '_' + (emp.empNo || 'emp') + '.pdf' }); Object.assign(doc, { fileName: r.name, saved: true, savedTo: [r.rootName, ...r.segs, r.name].join('\\'), savedAt: new Date().toISOString() }); savedCount++; }
         catch (e) { doc.saveError = fsErrText(e); saveErrors.push(emp.name + ': ' + doc.saveError); }
       } else doc.saveError = why;
     } else {
@@ -3802,7 +3923,7 @@ const kindBadge = k => '<span class="kind-badge ' + (k === 'קרן השתלמו�
 /* ---------------- תצוגה ---------------- */
 function renderPensions(v, t) {
   const st = penState();
-  let h = '<div class="crumb"><h2>פנסיות</h2><span class="meta">חוצץ המקור להפקדות לקופות · תנועה נוצרת בגיליון הראשי רק להפקדה שסומנה ״שולם״ ויש לה תאריך תשלום</span><span class="grow"></span>' +
+  let h = '<div class="crumb">' + backBtnHTML() + '<h2>פנסיות</h2><span class="meta">חוצץ המקור להפקדות לקופות · תנועה נוצרת בגיליון הראשי רק להפקדה שסומנה ״שולם״ ויש לה תאריך תשלום</span><span class="grow"></span>' +
     '<button class="btn sm" data-act="employees">👥 ניהול עובדים (' + S.employees.length + ')</button></div>';
   h += backBarHTML(st, 'penback');
   const paidNoDate = t.rows.filter(r => r.status && !r.payDate).length;
@@ -4023,7 +4144,7 @@ async function commitPensions(file, pages, plan, bg) {
   const path = (t.holder.docPath || '').trim();
   if (!DocFS.supported) why = 'הדפדפן אינו תומך בשמירה לתיקייה';
   else if (!path) why = 'לא הוגדר נתיב שמירת דוחות פנסיה';
-  else { try { if (!DocFS.root) await DocFS.connect(); canSave = await DocFS.permission(true); if (canSave && !DocFS.resolve(path).ok) { canSave = false; why = DocFS.resolve(path).error; } else if (!canSave) why = 'לא ניתנה הרשאה לתיקייה'; } catch (e) { why = fsErrText(e); } }
+  else { try { if (!DocFS.roots.length || !DocFS.resolve(path).ok) await DocFS.connect(); const rr = DocFS.resolve(path); if (!rr.ok) { canSave = false; why = rr.error; } else { canSave = await DocFS.permission(true, rr.root); if (canSave) UI.fsGrant = false; else why = 'לא ניתנה הרשאה לתיקייה ' + rr.rootName; } } catch (e) { why = fsErrText(e); } }
   let src = null, splitWhy = '';
   if (window.PDFLib) { try { src = await window.PDFLib.PDFDocument.load(await file.arrayBuffer(), { ignoreEncryption: true }); } catch (e) { splitWhy = e.message; } }
   else splitWhy = 'ספריית פיצול PDF לא נטענה';
@@ -4032,7 +4153,7 @@ async function commitPensions(file, pages, plan, bg) {
   if (canSave) for (const ym of [...new Set(inc.map(x => x.p.month))].sort()) {
     const sub = 'ריכוז/' + ym.slice(0, 4) + '/' + ym.slice(5, 7);
     const one = new File([file], 'ריכוז פנסיה ' + ym.slice(5, 7) + '-' + ym.slice(0, 4) + '.pdf', { type: 'application/pdf' });
-    try { const r = await DocFS.save(path + '/' + sub, one, { overwrite: true, fallbackName: 'pension_' + ym.slice(5, 7) + '-' + ym.slice(0, 4) + '.pdf' }); fullSaves.push([DocFS.rootName, ...r.segs, r.name].join('\\')); if (!fullSub) { fullSub = sub; fullName = r.name; } }
+    try { const r = await DocFS.save(path + '/' + sub, one, { overwrite: true, fallbackName: 'pension_' + ym.slice(5, 7) + '-' + ym.slice(0, 4) + '.pdf' }); fullSaves.push([r.rootName, ...r.segs, r.name].join('\\')); if (!fullSub) { fullSub = sub; fullName = r.name; } }
     catch (e) { saveErrors.push('ריכוז ' + monthLabel(ym) + ': ' + fsErrText(e)); }
   }
   const fullBlob = URL.createObjectURL(file);
@@ -4079,7 +4200,7 @@ async function commitPensions(file, pages, plan, bg) {
       copied.forEach(pg => out.addPage(pg));
       one = new File([await out.save()], fname, { type: 'application/pdf' });
       if (canSave) {
-        try { const r = await DocFS.save(path + '/' + folder, one, { overwrite: true, fallbackName: 'pension_' + g.month.slice(5, 7) + '-' + g.month.slice(0, 4) + '_' + (g.emp.empNo || 'emp') + '.pdf' }); finalName = r.name; saved = true; savedTo = [DocFS.rootName, ...r.segs, r.name].join('\\'); savedCount++; }
+        try { const r = await DocFS.save(path + '/' + folder, one, { overwrite: true, fallbackName: 'pension_' + g.month.slice(5, 7) + '-' + g.month.slice(0, 4) + '_' + (g.emp.empNo || 'emp') + '.pdf' }); finalName = r.name; saved = true; savedTo = [r.rootName, ...r.segs, r.name].join('\\'); savedCount++; }
         catch (e) { err = fsErrText(e); saveErrors.push(g.emp.name + ': ' + err); }
       }
     }
@@ -4142,7 +4263,7 @@ function renderCredit(v, t) {
   const st = ccState();
   const items = ccFilter(t);
   const cards = ccCards();
-  let h = '<div class="crumb"><h2>אשראי</h2><span class="meta">חוצץ המקור לעסקאות בכרטיסים · בתזרים נוצרת שורת חיוב אחת לכל כרטיס לפי מועד החיוב בבנק</span><span class="grow"></span>' +
+  let h = '<div class="crumb">' + backBtnHTML() + '<h2>אשראי</h2><span class="meta">חוצץ המקור לעסקאות בכרטיסים · בתזרים נוצרת שורת חיוב אחת לכל כרטיס לפי מועד החיוב בבנק</span><span class="grow"></span>' +
     '<button class="btn sm" data-act="cccards">💳 ניהול כרטיסים (' + cards.filter(c => c.active !== false).length + ')</button>' +
     '<button class="btn sm" data-act="ccrecur">🔁 חיובים קבועים (' + (S.ops.credit.recurring || []).length + ')</button></div>';
 
@@ -4789,7 +4910,7 @@ function authFilter(t) {
 function renderAuthorities(v, t) {
   const st = authState();
   const items = authFilter(t);
-  let h = '<div class="crumb"><h2>רשויות</h2><span class="meta">חוצץ המקור לתשלומים ולזיכויים מול רשויות · כל תנועת רשויות בתזרים מגיעה מכאן בלבד</span></div>';
+  let h = '<div class="crumb">' + backBtnHTML() + '<h2>רשויות</h2><span class="meta">חוצץ המקור לתשלומים ולזיכויים מול רשויות · כל תנועת רשויות בתזרים מגיעה מכאן בלבד</span></div>';
 
   const noDate = t.rows.filter(r => !authRowDate(r) && nz(r.amount)).length;
   const noAuth = t.rows.filter(r => !r.authType).length;
@@ -5066,6 +5187,35 @@ function personByKey(key) {
   return all.find(p => p.key === key) ||
     all.find(p => (key.startsWith('emp:') && p.empId === key.slice(4)) || (key.startsWith('ent:') && p.entId === key.slice(4))) || null;
 }
+/* ---- סיווג בכ״א: שכיר / עצמאי ----
+   נשמר לפי השם הראשי של האדם, כך שהוא נשמר גם אם נפתח או נסגר לו חוצץ/רשומת עובד.
+   ברירת מחדל: מי שיש לו רשומת עובד – שכיר; מי שיש לו רק חוצץ תשלומים – עצמאי. */
+const HR_KINDS = { salaried: 'שכירים', freelancer: 'עצמאים' };
+/* הרשימה שמסר דניס לזריעה חד-פעמית של הסיווג (שאר האנשים – עצמאים) */
+const HR_SALARIED_SEED = ['אופיר', 'עדי', 'שי לי', 'דנה', 'לודמילה', 'דור', 'נועם אליהו', 'גאיה', 'ים', 'ברי', 'דניס'];
+function hrMap() { return S.settings.hrKind || (S.settings.hrKind = {}); }
+function personHrKind(p) {
+  const v = hrMap()[personCanon(p.name)];
+  return (v === 'salaried' || v === 'freelancer') ? v : (p.empId ? 'salaried' : 'freelancer');
+}
+function setPersonHrKind(p, kind) { hrMap()[personCanon(p.name)] = kind === 'salaried' ? 'salaried' : 'freelancer'; }
+/* מילות שם – מקף נחשב רווח, כך ש״שי לי״ מזהה את ״שי-לי וולנסקי״ */
+function nameWords(n) { return String(n || '').replace(/["'׳״]/g, '').replace(/[-–]/g, ' ').replace(/\s+/g, ' ').trim().split(' ').filter(Boolean); }
+/* האם שם מהרשימה מתאר את האדם: זהות שם, קבוצת כינויים, או כל מילות השם מוכלות בשם המלא */
+function hrSeedMatches(seed, name) {
+  if (samePerson(seed, name) || normPerson(seed) === normPerson(name)) return true;
+  const a = nameWords(seed), b = nameWords(name);
+  return a.length > 0 && a.every(w => b.includes(w));
+}
+/* זריעה חד-פעמית – מכאן ואילך הסיווג נשמר ונשלט ידנית מכרטיס האדם */
+const HR_SEED_VER = 2;
+function hrSeedOnce() {
+  if (nz(S.settings.hrSeeded) >= HR_SEED_VER) return;
+  const m = hrMap();
+  for (const p of allPeople(true)) m[personCanon(p.name)] = HR_SALARIED_SEED.some(sd => hrSeedMatches(sd, p.name)) ? 'salaried' : 'freelancer';
+  S.settings.hrSeeded = HR_SEED_VER;
+}
+
 function personRows(p) {
   const sal = p.empId ? S.ops.salaries.rows.filter(r => r.employeeId === p.empId) : [];
   const pen = p.empId ? S.ops.pensions.rows.filter(r => r.employeeId === p.empId) : [];
@@ -5103,8 +5253,8 @@ function renderPerson(v) {
   const ownSum = sum(ownY, r => calcRow('freelancer', r).base);
   const cost = r2(gross + penSum + ownSum);
 
-  let h = '<div class="crumb"><h2>' + esc(p.name) + '</h2>' +
-    '<span class="meta">' + p.roles.map(r => '<span class="kind-badge">' + r + '</span>').join(' ') +
+  let h = '<div class="crumb">' + backBtnHTML() + '<h2>' + esc(p.name) + '</h2>' +
+    '<span class="meta"><span class="kind-badge hr-badge">' + (personHrKind(p) === 'salaried' ? 'שכיר' : 'עצמאי') + '</span> ' + p.roles.map(r => '<span class="kind-badge">' + r + '</span>').join(' ') +
     (p.empNo ? ' · עובד מס׳ ' + esc(p.empNo) : '') + (p.startDate ? ' · תחילת עבודה ' + fmtDate(p.startDate) : '') +
     ((p.aliases && p.aliases.length) ? ' · ידוע גם כ: ' + p.aliases.map(esc).join(', ') : '') +
     (p.archived ? ' · <b style="color:var(--warn)">בארכיון</b>' : '') + '</span><span class="grow"></span>' +
@@ -5158,14 +5308,15 @@ function renderPerson(v) {
   h += '<div class="sal-subhead"><b>תשלומים כעצמאי – ' + st.year + '</b><span class="grow"></span>' +
     (p.entId ? '<button class="btn sm" data-act="perown">לחוצץ האדם ›</button>' : '<button class="btn sm" data-act="peraddtab">＋ פתיחת חוצץ תשלומים</button>') + '</div>';
   if (ownY.length) {
-    h += '<div class="grid-wrap sal-grid"><table class="grid"><thead><tr><th>חודש</th><th class="num">סכום</th><th>פרויקט</th><th>חשבונית / קבלה</th><th>תאריך תשלום</th><th>סטטוס</th></tr></thead><tbody>';
+    h += '<div class="grid-wrap sal-grid"><table class="grid"><thead><tr><th>חודש</th><th class="num">ללא מע״מ</th><th class="num">ערך המע״מ</th><th class="num">סכום</th><th>פרויקט</th><th>חשבונית / קבלה</th><th>תאריך תשלום</th><th>סטטוס</th></tr></thead><tbody>';
     for (const r of ownY.slice().sort((a, b) => String(b.month).localeCompare(String(a.month)) || nz(b.serial) - nz(a.serial))) {
       const c = calcRow('freelancer', r);
-      h += '<tr><td class="num"><b>' + esc(r.month || '') + '.' + esc(r.year || '') + '</b></td><td class="num b">' + fmtMoney(c.base) + '</td><td>' + esc(r.projectName || '') + '</td>' +
+      h += '<tr><td class="num"><b>' + esc(r.month || '') + '.' + esc(r.year || '') + '</b></td><td class="num">' + fmtMoney(c.net) + '</td><td class="num">' + fmtMoney(c.vatAmt) + '</td><td class="num b">' + fmtMoney(c.base) + '</td><td>' + esc(r.projectName || '') + '</td>' +
         '<td>' + esc(r.taxReceiptNo || '') + '</td><td class="num">' + fmtDate(r.payDate) + '</td>' +
         '<td><span class="status ' + (c.paid ? 'yes' : 'no') + '">' + c.payStatus + '</span></td></tr>';
     }
-    h += '<tr class="tot-row"><td>סה״כ</td><td class="num">' + fmtMoney(ownSum) + '</td><td colspan="4"></td></tr>';
+    const ownNet = r2(ownY.reduce((a, r) => a + calcRow('freelancer', r).net, 0)), ownVat = r2(ownY.reduce((a, r) => a + calcRow('freelancer', r).vatAmt, 0));
+    h += '<tr class="tot-row"><td>סה״כ</td><td class="num">' + fmtMoney(ownNet) + '</td><td class="num">' + fmtMoney(ownVat) + '</td><td class="num">' + fmtMoney(ownSum) + '</td><td colspan="4"></td></tr>';
     h += '</tbody></table></div>';
   } else h += '<div class="msg info">' + (p.entId ? 'אין תשלומים ב-' + st.year : 'לא נפתח חוצץ תשלומים לאדם זה') + '</div>';
 
@@ -5187,6 +5338,7 @@ function personEditModal(p) {
   openModal({
     title: 'עריכת פרטי אדם – ' + p.name,
     body: '<div class="form-row"><label>שם</label><input id="peName" value="' + esc(p.name) + '"></div>' +
+      '<div class="form-row"><label>סיווג בכ״א</label><select id="peHr"><option value="salaried"' + (personHrKind(p) === 'salaried' ? ' selected' : '') + '>שכיר</option><option value="freelancer"' + (personHrKind(p) === 'freelancer' ? ' selected' : '') + '>עצמאי</option></select><div class="hint">קובע תחת איזו תת-קבוצה האדם מופיע בסרגל כ״א – שכירים או עצמאים.</div></div>' +
       '<div class="form-row"><label>מספר עובד</label><input id="peNo" value="' + esc(p.empNo || '') + '"' + (p.empId ? '' : ' disabled placeholder="רלוונטי לעובד שכיר"') + '></div>' +
       '<div class="form-row"><label>תחילת עבודה</label>' + dateInputHTML(p.startDate || '', 'id="peStart"' + (p.empId ? '' : ' disabled')) + '</div>' +
       '<div class="form-row"><label>שמות נוספים לאותו אדם</label><textarea id="peAlias" rows="3" style="width:100%;font-family:inherit" placeholder="שם בכל שורה – לדוגמה: ברי / בארי">' + esc((p.aliases || []).join('\n')) + '</textarea><div class="hint">שמות אלה יזוהו כאותו אדם בקליטת תלושים, דוחות פנסיה ובחוצצים.</div></div>' +
@@ -5196,6 +5348,7 @@ function personEditModal(p) {
       label: 'שמירה', cls: 'primary', onClick: bg => {
         const nm = $('#peName', bg).value.trim();
         if (!nm) { toast('יש להזין שם', 'err'); return false; }
+        const hrSel = $('#peHr', bg); if (hrSel) { delete hrMap()[personCanon(p.name)]; setPersonHrKind({ name: nm, empId: p.empId }, hrSel.value); }
         if (p.empId) {
           const e = S.employees.find(x => x.id === p.empId);
           if (e) { e.name = nm; e.empNo = $('#peNo', bg).value.trim(); const d = $('#peStart', bg).value.trim(); e.startDate = d ? (parseDateInput(d) || '') : ''; }
@@ -5331,7 +5484,8 @@ function freeDocDrop(tabId, rowId, field) {
 /* מחוצץ העצמאי אל הבנק */
 function freeBankSync(row, ent) {
   ent = ent || freeEntOfRow(row); if (!ent) return;
-  const amt = Math.abs(nz(row.amount));
+  // הסכום שיוצא מהבנק הוא הסכום הכולל מע״מ, כפי שהוא מחושב בשורת העצמאי
+  const amt = Math.abs(nz(calcRow('freelancer', row).amount));
   let b = freeBankRowOf(row);
   // תשלום ללא תאריך או ללא סכום הוא עדיין צפי – אין לו תנועה בבנק
   if (!row.payDate || !amt) {
@@ -5382,13 +5536,190 @@ function bankFreeSync(b) {
   // שם מזוהה נרשם בצורתו הרשמית ("ברי" → "ברוך בארי כהן"), כדי שהחוצץ והבנק ידברו באותו שם
   if (normPerson(b.party) !== normPerson(ent.name)) b.party = ent.name;
   const ym = b.forMonth || (b.date || '').slice(0, 7) || curMonth();
+  // הסכום בבנק הוא כולל מע״מ; הוא מפורק לסכום ללא מע״מ כך שהחישוב חזרה מחזיר בדיוק אותו סכום
+  const gross = Math.abs(nz(b.expense)) || Math.abs(nz(b.income));
+  const vp = (row.vatPct === undefined || row.vatPct === null || row.vatPct === '')
+    ? vatRateFor(b.date || '', S.settings.vatDefault) : nz(row.vatPct);
   Object.assign(row, {
-    amount: Math.abs(nz(b.expense)) || Math.abs(nz(b.income)),
+    vatPct: vp, net: gross ? netFromGross(gross, vp) : 0,
     payDate: b.date || '', year: ym.slice(0, 4), month: ym.slice(5, 7)
   });
+  delete row.amount;
   if (!String(row.taxReceiptNo || '').trim() && String(b.docNo || '').trim()) row.taxReceiptNo = b.docNo;
   freeDocMirror(ent, row, b);
   markDirty();
+}
+/* =====================================================================
+   תצוגה לפי תקופה בחוצצים (בנק / עצמאים) · ניווט "חזרה למסך הקודם"
+   ===================================================================== */
+
+/* ---------------- תקופה בחוצץ ---------------- */
+/* אילו חוצצים מציגים את סרגל התקופה. הרחבה = הוספת kind לרשימה + שדה תאריך ב-rowPeriodDate. */
+const PERIOD_TABS = ['bank', 'freelancer'];
+const PERIOD_BY = { bank: 'תאריך התנועה בבנק', freelancer: 'חודש השורה' };
+function tabSupportsPeriod(t) { return !!t && PERIOD_TABS.includes(t.kind); }
+/* התאריך שלפיו נחתכת השורה לתקופה */
+function rowPeriodDate(kind, row) {
+  if (kind === 'bank') return row.date || (row.forMonth ? row.forMonth + '-01' : '');
+  if (kind === 'freelancer') return (row.year && row.month) ? row.year + '-' + pad2(row.month) + '-01' : (row.payDate || '');
+  return row.payDate || row.date || '';
+}
+function tabPeriod(tabId) {
+  const all = UI.tabPeriod || (UI.tabPeriod = {});
+  return all[tabId] || (all[tabId] = { mode: 'all', month: curMonth(), fromDate: '', toDate: '' });
+}
+function tabPeriodBounds(p) {
+  if (!p || p.mode === 'all') return null;
+  if (p.mode === 'month') return { from: p.month + '-01', to: monthEnd(p.month) };
+  let a = p.fromDate || p.toDate || todayISO(), b = p.toDate || p.fromDate || todayISO();
+  if (a > b) [a, b] = [b, a];
+  return { from: a, to: b };
+}
+function tabPeriodLabel(t) {
+  const p = tabPeriod(t.tabId);
+  if (p.mode === 'all') return 'כל התקופות';
+  if (p.mode === 'month') return monthName(p.month);
+  const b = tabPeriodBounds(p);
+  return fmtDate(b.from) + ' – ' + fmtDate(b.to);
+}
+/* חיתוך הפריטים לפי התקופה – נקרא מתוך applyFilters, ולכן חל על הטבלה, הסיכומים והייצוא */
+function applyTabPeriod(t, items) {
+  if (!tabSupportsPeriod(t)) return items;
+  const b = tabPeriodBounds(tabPeriod(t.tabId));
+  if (!b) return items;
+  return items.filter(({ row }) => { const d = rowPeriodDate(t.kind, row); return d && d >= b.from && d <= b.to; });
+}
+/* טווח השנים שיש בהן נתונים בחוצץ */
+function tabPeriodYears(t) {
+  const ys = new Set();
+  t.rows.forEach(r => { const d = rowPeriodDate(t.kind, r); if (d) ys.add(d.slice(0, 4)); });
+  return [...ys].sort().reverse();
+}
+function tabPeriodBarHTML(t, shown) {
+  const p = tabPeriod(t.tabId);
+  const seg = (mode, label) => '<button class="' + (p.mode === mode ? 'on' : '') + '" data-act="tpmode" data-mode="' + mode + '">' + label + '</button>';
+  let h = '<div class="period-bar"><span class="pl">תצוגה לפי ' + (PERIOD_BY[t.kind] || 'תאריך') + '</span>' +
+    '<div class="seg">' + seg('month', 'חודש') + seg('range', 'טווח') + seg('all', 'כל התקופות') + '</div>';
+  if (p.mode === 'month') {
+    h += '<div class="pnav"><button class="pbtn" data-act="tpprev" title="חודש קודם"' + (p.month <= CAL_MIN_YEAR + '-01' ? ' disabled' : '') + '>▶</button>' +
+      '<button class="pill-gold period-pill cal-open" data-act="tppickmonth" title="בחירת חודש">' + monthShort(p.month) + '</button>' +
+      '<button class="pbtn" data-act="tpnext" title="חודש הבא">◀</button></div>' +
+      '<button class="btn sm cal-open" data-act="tppickmonth">📅 בחירת חודש</button>' +
+      (p.month !== curMonth() ? '<button class="btn sm" data-act="tpthis">החודש הנוכחי</button>' : '');
+  } else if (p.mode === 'range') {
+    const b = tabPeriodBounds(p);
+    const dateBox = (which, label, val) => '<label class="pl">' + label + ' <span class="dp"><input class="tpdate" data-which="' + which + '" type="text" placeholder="dd/mm/yyyy" value="' + esc(fmtDate(val)) + '"><button type="button" class="cal-open" data-act="tppickdate" data-which="' + which + '" title="לוח שנה">📅</button></span></label>';
+    const y = +curMonth().slice(0, 4);
+    h += dateBox('fromDate', 'מתאריך', b.from) + dateBox('toDate', 'עד תאריך', b.to) +
+      '<span class="presets"><button class="btn sm" data-act="tppreset" data-p="3">3 חודשים אחרונים</button>' +
+      '<button class="btn sm" data-act="tppreset" data-p="12">12 חודשים</button>' +
+      '<button class="btn sm" data-act="tppreset" data-p="year">שנת ' + y + '</button>' +
+      '<button class="btn sm" data-act="tppreset" data-p="lastyear">שנת ' + (y - 1) + '</button></span>';
+  } else {
+    const ys = tabPeriodYears(t);
+    if (ys.length > 1) h += '<span class="presets">' + ys.map(y => '<button class="btn sm" data-act="tpyear" data-y="' + y + '">שנת ' + y + '</button>').join('') + '</span>';
+  }
+  const tot = t.rows.length;
+  h += '<span class="grow"></span><span class="period-title">' + esc(tabPeriodLabel(t)) +
+    (shown === tot ? ' · ' + tot + ' שורות' : ' · ' + shown + ' מתוך ' + tot + ' שורות') + '</span></div>';
+  return h;
+}
+/* שדות התאריך של מצב "טווח" – נקשרים אחרי כל רינדור של חוצץ */
+function bindTabPeriodInputs(t) {
+  if (!tabSupportsPeriod(t)) return;
+  const p = tabPeriod(t.tabId);
+  $$('.tpdate').forEach(inp => inp.onchange = () => {
+    const iso = parseDateInput(inp.value);
+    if (!iso) { toast('תאריך לא תקין (dd/mm/yyyy)', 'err'); render(); return; }
+    if (iso < CAL_MIN_YEAR + '-01-01') { toast('ניתן לבחור תאריכים החל משנת ' + CAL_MIN_YEAR, 'warn'); render(); return; }
+    const b = tabPeriodBounds(p); p.fromDate = b.from; p.toDate = b.to;
+    p[inp.dataset.which] = iso;
+    if (p.fromDate > p.toDate) [p.fromDate, p.toDate] = [p.toDate, p.fromDate];
+    render();
+  });
+}
+/* פעולות סרגל התקופה. מחזיר true אם הפעולה טופלה. */
+function tabPeriodAction(act, el, t) {
+  if (!t || !act.startsWith('tp')) return false;
+  const p = tabPeriod(t.tabId);
+  switch (act) {
+    case 'tpmode':
+      p.mode = el.dataset.mode;
+      if (p.mode === 'range' && (!p.fromDate || !p.toDate)) {
+        const ys = tabPeriodYears(t), y = ys.length ? ys[0] : curMonth().slice(0, 4);
+        p.fromDate = y + '-01-01'; p.toDate = y + '-12-31';
+      }
+      render(); return true;
+    case 'tpprev': case 'tpnext': {
+      const nm = monthAdd(p.month, act === 'tpprev' ? -1 : 1);
+      if (nm < CAL_MIN_YEAR + '-01') return true;
+      p.month = nm; render(); return true;
+    }
+    case 'tppickmonth':
+      openCalendar(el, { value: p.month + '-01', pickMonth: true, onPick: iso => { p.mode = 'month'; p.month = iso.slice(0, 7); render(); } });
+      return true;
+    case 'tppickdate': {
+      const b = tabPeriodBounds(p), which = el.dataset.which;
+      openCalendar(el, { value: which === 'fromDate' ? b.from : b.to, onPick: iso => { p.fromDate = b.from; p.toDate = b.to; p[which] = iso; if (p.fromDate > p.toDate) [p.fromDate, p.toDate] = [p.toDate, p.fromDate]; render(); } });
+      return true;
+    }
+    case 'tpthis': p.month = curMonth(); render(); return true;
+    case 'tppreset': {
+      const cm = curMonth(), y = +cm.slice(0, 4), k = el.dataset.p;
+      if (k === '3') { p.fromDate = monthAdd(cm, -2) + '-01'; p.toDate = monthEnd(cm); }
+      else if (k === '12') { p.fromDate = monthAdd(cm, -11) + '-01'; p.toDate = monthEnd(cm); }
+      else if (k === 'year') { p.fromDate = y + '-01-01'; p.toDate = y + '-12-31'; }
+      else { p.fromDate = (y - 1) + '-01-01'; p.toDate = (y - 1) + '-12-31'; }
+      p.mode = 'range'; render(); return true;
+    }
+    case 'tpyear': {
+      const y = el.dataset.y;
+      if (!y) { p.mode = 'all'; render(); return true; }
+      p.mode = 'range'; p.fromDate = y + '-01-01'; p.toDate = y + '-12-31'; render(); return true;
+    }
+    case 'tpall': p.mode = 'all'; render(); return true;
+  }
+  return false;
+}
+
+/* ---------------- ניווט: חזרה למסך הקודם ---------------- */
+function navValid(v) {
+  if (!v) return false;
+  if (['main', 'settings', 'anomalies', 'alerts'].includes(v)) return true;
+  if (String(v).startsWith('person:')) return !!personByKey(String(v).slice(7));
+  return !!tabInfo(v);
+}
+function viewName(v) {
+  if (v === 'main') return 'גיליון ראשי';
+  if (v === 'settings') return 'הגדרות';
+  if (v === 'anomalies') return 'אנומליות';
+  if (v === 'alerts') return 'התראות';
+  if (String(v).startsWith('person:')) { const p = personByKey(String(v).slice(7)); return p ? p.name : 'כרטיס אדם'; }
+  const t = tabInfo(v); return t ? t.name : '';
+}
+function navPush(from, to) {
+  if (!from || from === to) return;
+  const st = UI.navStack || (UI.navStack = []);
+  if (st[st.length - 1] === from) return;
+  st.push(from);
+  while (st.length > 30) st.shift();
+}
+function navBackTarget() {
+  const st = UI.navStack || [];
+  for (let i = st.length - 1; i >= 0; i--) if (navValid(st[i]) && st[i] !== UI.view) return st[i];
+  return '';
+}
+function navBack() {
+  const st = UI.navStack || (UI.navStack = []);
+  let v = '';
+  while (st.length) { const x = st.pop(); if (navValid(x) && x !== UI.view) { v = x; break; } }
+  UI.navSkip = true;
+  navigate(v || 'main');
+}
+function backBtnHTML() {
+  const v = navBackTarget();
+  if (!v) return '';
+  return '<button class="btn sm back-btn" data-act="navback" title="חזרה למסך שממנו הגעת">‹ חזרה ל' + esc(viewName(v)) + '</button>';
 }
 /* =====================================================================
    סנכרון ענן (Firebase Realtime Database) – אותם נתונים בכל המכשירים
@@ -6056,7 +6387,7 @@ function renderAlerts(v) {
   const shown = (st.showSnoozed ? snoozed : live).filter(a => (!st.cat || a.cat === st.cat) && (!st.sev || a.sev === st.sev));
   const n = s => live.filter(a => a.sev === s).length;
 
-  let h = '<div class="crumb"><h2>🔔 מרכז התראות</h2><span class="meta">נגזר אוטומטית מכל החוצצים · מה שדורש טיפול מופיע כאן במקום אחד</span></div>';
+  let h = '<div class="crumb">' + backBtnHTML() + '<h2>🔔 מרכז התראות</h2><span class="meta">נגזר אוטומטית מכל החוצצים · מה שדורש טיפול מופיע כאן במקום אחד</span></div>';
   h += '<div class="stats">' +
     statHTML('דחוף', n('err'), n('err') ? 'red' : '') +
     statHTML('לטיפול', n('warn'), n('warn') ? 'gold' : '') +
@@ -6492,7 +6823,7 @@ function viewAction(act, el, e) {
 function renderAnomalies(v) {
   const list = detectAnomalies();
   const ST = { pending: 'ממתין לבירור', exception: 'אושר כחריג', fix: 'אושר לתיקון' };
-  let h = '<div class="crumb"><h2>אנומליות</h2><span class="meta">ערך קיים שאינו תואם לחישוב הצפוי – הנתון אינו נדרס אוטומטית</span></div>';
+  let h = '<div class="crumb">' + backBtnHTML() + '<h2>אנומליות</h2><span class="meta">ערך קיים שאינו תואם לחישוב הצפוי – הנתון אינו נדרס אוטומטית</span></div>';
   h += '<div class="stats">' + statHTML('ממתין לבירור', list.filter(a => a.status === 'pending').length, 'red') + statHTML('אושר כחריג', list.filter(a => a.status === 'exception').length, 'green') +
     statHTML('תוקנו (היסטוריה)', Object.values(S.anomalies).filter(a => a.status === 'fix').length) + '</div>';
   if (!list.length) h += '<div class="empty-state"><b>אין אנומליות</b>המנגנון פעיל: כל ערך שנדרס ידנית או נטען מקובץ ואינו תואם לנוסחה יופיע כאן עם מקור, ערך קיים, ערך מחושב, פער ונוסחה.</div>';
@@ -6675,7 +7006,7 @@ function bankAction(act, el, e, t) {
 function renderSettings(v) {
   const st = S.settings, bf = st.bankFee;
   const counts = { yazam: 0, mod: 0, freelancer: 0 }; Object.values(S.entities).forEach(e => counts[e.type]++);
-  let h = '<div class="crumb"><h2>הגדרות, כללים עסקיים וגיבוי</h2></div>';
+  let h = '<div class="crumb">' + backBtnHTML() + '<h2>הגדרות, כללים עסקיים וגיבוי</h2></div>';
   h += '<div class="setting-card"><h3>כללי בסיס</h3><div class="setting-grid">' +
     '<div class="form-row"><label>יתרת פתיחה (עו״ש)</label><input data-set="openingBalance" data-kind="num" value="' + esc(fmtMoney(st.openingBalance)) + '" style="direction:ltr"></div>' +
     '<div class="form-row"><label>מע״מ ברירת מחדל לשורה חדשה %</label><input data-set="vatDefault" data-kind="num" value="' + esc(st.vatDefault) + '" style="direction:ltr"></div>' +
@@ -6697,9 +7028,12 @@ function renderSettings(v) {
 
   h += '<div class="setting-card" id="docFolderCard"><h3>תיקיית מסמכים במחשב</h3>' +
     (!DocFS.supported ? '<div class="msg err">הדפדפן הנוכחי אינו תומך בשמירת קבצים לתיקייה. יש לפתוח את האתר ב-Chrome או Edge במחשב.</div>'
-      : '<div class="kv" style="margin-bottom:10px"><div>סטטוס</div><div>' + (DocFS.root ? '<span class="status yes">מחוברת</span> <b>' + esc(DocFS.rootName) + '</b>' : '<span class="status no">לא מחוברת</span>') + '</div></div>' +
+      : '<div class="kv" style="margin-bottom:10px"><div>תיקיות מחוברות</div><div>' + (DocFS.roots.length
+        ? DocFS.roots.map(r => '<span class="status yes" style="margin-inline-end:6px">📁 ' + esc(r.name) + '</span>').join('') + (UI.fsGrant ? ' <button class="btn sm gold" data-act="fsgrant">אישור גישה</button>' : '')
+        : '<span class="status no">לא מחוברת</span>') + '</div></div>' +
+      '<div class="hint" style="margin-bottom:10px">אפשר לחבר כמה תיקיות. לכל חוצץ נבחרת אוטומטית התיקייה שמופיעה בנתיב שלו, ולכן חיבור של התיקייה העליונה (למשל <b dir="ltr">אטלס</b>) מספיק לכל החוצצים. התיקיות נזכרות, ואחרי רענון נדרש אישור אחד בלחיצה.</div>' +
       '<p class="muted" style="font-size:13px;margin:0 0 8px">דפדפן אינו רשאי לכתוב לנתיב שהוקלד בלי אישור. בוחרים פעם אחת תיקיית בסיס שמופיעה בנתיבי החוצצים (למשל <span dir="ltr">C:\\ATLAS</span>), ומכאן כל PDF שנגרר נשמר לתת-התיקייה לפי נתיב החוצץ. תיקיות חסרות נוצרות אוטומטית.</p>' +
-      '<div class="toolbar"><button class="btn gold" data-act="fsconnect">📁 ' + (DocFS.root ? 'החלפת תיקייה…' : 'חיבור תיקייה…') + '</button>' + (DocFS.root ? '<button class="btn" data-act="fstest">בדיקת כתיבה</button><button class="btn danger" data-act="fsdisconnect">ניתוק</button>' : '') + '</div>') + '</div>';
+      '<div class="toolbar"><button class="btn gold" data-act="fsconnect">📁 ' + (DocFS.roots.length ? 'הוספת תיקייה…' : 'חיבור תיקייה…') + '</button>' + (DocFS.roots.length ? '<button class="btn" data-act="fstest">בדיקת כתיבה</button><button class="btn danger" data-act="fsdisconnect">ניתוק הכול</button>' : '') + '</div>') + '</div>';
   h += '<div class="setting-card"><h3>שמירה, גיבוי ושחזור</h3><div class="kv" style="margin-bottom:10px"><div>מנגנון שמירה</div><div>' + Storage.name + ' (מופרד מקוד האתר)</div><div>נשמר לאחרונה</div><div>' + (S.savedAt ? new Date(S.savedAt).toLocaleString('he-IL') : '—') + '</div>' +
     '<div>פרויקטי יזם / משהב״ט / עצמאיים</div><div>' + counts.yazam + ' / ' + counts.mod + ' / ' + counts.freelancer + '</div><div>עובדים</div><div>' + S.employees.length + '</div><div>קישורי מסמכים</div><div>' + Object.keys(S.docs).length + '</div></div>' +
     '<div class="toolbar"><button class="btn gold" data-act="save">💾 שמירה ואימות</button><button class="btn" data-act="backup">⬇ הורדת גיבוי JSON מלא</button><button class="btn" data-act="restore">⬆ טעינת JSON…</button></div></div>';
@@ -6745,7 +7079,16 @@ function settingsAction(act, el) {
     }
     case 'fsconnect': connectDocFolder(); break;
     case 'fsdisconnect': DocFS.disconnect().then(() => { render(); toast('תיקיית המסמכים נותקה (הקבצים עצמם לא נמחקו)', 'ok'); }); break;
-    case 'fstest': (async () => { try { if (!(await DocFS.permission(true))) throw Object.assign(new Error(''), { name: 'NotAllowedError' }); const ok = await DocFS.testWrite(); toast(ok ? 'בדיקת כתיבה הצליחה בתיקייה ' + DocFS.rootName : 'בדיקת הכתיבה נכשלה', ok ? 'ok' : 'err'); } catch (e) { toast('בדיקת כתיבה נכשלה: ' + fsErrText(e), 'err', 6000); } })(); break;
+    case 'fsgrant': grantDocFolders(); break;
+    case 'fstest': (async () => {
+      const names = [];
+      for (const r of DocFS.roots) {
+        try { if (!(await DocFS.permissionFor(r, true))) { names.push('✗ ' + r.name); continue; } names.push((await DocFS.testWrite(r)) ? '✓ ' + r.name : '✗ ' + r.name); }
+        catch (e) { names.push('✗ ' + r.name); }
+      }
+      UI.fsGrant = await DocFS.pendingGrant(); render();
+      toast(names.length ? 'בדיקת כתיבה: ' + names.join(' · ') : 'אין תיקיות מחוברות', names.every(n => n[0] === '✓') ? 'ok' : 'warn', 7000);
+    })(); break;
     case 'testcreate': createTestData(); break;
     case 'testremove': removeTestData(); break;
     case 'resetall':
@@ -7034,7 +7377,7 @@ document.addEventListener('keydown', e => { if ((e.ctrlKey || e.metaKey) && e.ke
   if (ensureBankFees() + ensureCreditRecurring()) markDirty();
   try { const v = localStorage.getItem('atlas_ui_view'); if (v) UI.view = v; } catch (e) { }
   render();
-  DocFS.init().then(found => { if (found) render(); });
+  DocFS.init().then(async found => { if (found) { UI.fsGrant = await DocFS.pendingGrant(); render(); } });
   syncInit();
   setInterval(() => { if (ensureBankFees() + ensureCreditRecurring()) { markDirty(); render(); } }, 60 * 60 * 1000);
 })();
