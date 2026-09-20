@@ -957,7 +957,40 @@ function normalizeState(o) {
     delete s.entities[id];
     s.entityOrder = s.entityOrder.filter(x => x !== id);
   }
+  repairFreeDocs(s);
   return s;
+}
+/* תיקון: חשבונית שקושרה בחוצץ האדם לפני שהקישור הדו-כיווני הופעל (או להפך) לא קיבלה
+   עותק בצד השני, ולכן הצ׳יפ בשורה המקבילה נראה כמספר בלבד ולא נפתח. כאן נוצר העותק
+   החסר עבור כל זוג שורות מקושרות – בלי לגעת בקבצים עצמם. */
+function repairFreeDocs(s) {
+  const bank = (s.ops.bank && s.ops.bank.rows) || [];
+  if (!bank.length) return;
+  const byId = {}; bank.forEach(b => byId[b.id] = b);
+  const docs = Object.values(s.docs);
+  const at = (tabId, rowId, field) => docs.find(d => d.tabId === tabId && d.rowId === rowId && d.field === field);
+  const add = (src, tgt) => {
+    const id = uid('doc');
+    const d = Object.assign({}, src, tgt, { id, mirrorOf: src.id });
+    s.docs[id] = d; docs.push(d);
+    return d;
+  };
+  for (const eid of Object.keys(s.entities)) {
+    const e = s.entities[eid];
+    if (e.type !== 'freelancer') continue;
+    for (const r of e.rows || []) {
+      const b = r.bankRowId ? byId[r.bankRowId] : null;
+      if (!b) continue;
+      const a = at(eid, r.id, 'taxReceiptNo'), c = at('ops:bank', b.id, 'docNo');
+      if (a && !c) {
+        add(a, { tabId: 'ops:bank', rowId: b.id, field: 'docNo' });
+        if (!String(b.docNo || '').trim()) b.docNo = String(r.taxReceiptNo || a.number || '').trim();
+      } else if (c && !a) {
+        add(c, { tabId: eid, rowId: r.id, field: 'taxReceiptNo' });
+        if (!String(r.taxReceiptNo || '').trim()) r.taxReceiptNo = String(b.docNo || c.number || '').trim();
+      }
+    }
+  }
 }
 
 /* ---------------- templates ---------------- */
