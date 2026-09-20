@@ -322,6 +322,72 @@ table.msum tfoot td{background:var(--gold-soft);font-weight:700}
   background:var(--navy);color:#fff;font-weight:800;font-size:12px;letter-spacing:.3px;
   padding:4px 16px;border-radius:999px;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,.25)}
 @media print{.grid tr.cfsplit .bar{background:var(--gold);-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+
+/* ===== תצוגה "מרווחת" לגיליון הראשי – שורות אווריריות, רקע לבן, קווים עדינים ===== */
+.grid-wrap.skin-soft{border-color:#e8eaf0;box-shadow:0 1px 3px rgba(20,33,61,.05);
+  font-family:"Segoe UI",Arial,"Noto Sans Hebrew",sans-serif}
+.grid-wrap.skin-soft .grid th,.grid-wrap.skin-soft .grid td,
+.grid-wrap.skin-soft .chip,.grid-wrap.skin-soft .status,
+.grid-wrap.skin-soft button,.grid-wrap.skin-soft input,.grid-wrap.skin-soft select{font-family:inherit}
+.grid-wrap.skin-soft .grid th{background:#f5f6fa;color:#455070;font-weight:600;font-size:12.5px;
+  padding:14px 12px;border-left:0;border-bottom:1px solid #e3e6ee;letter-spacing:.2px}
+.grid-wrap.skin-soft .grid th .fbtn{color:#a9b0c4;font-size:12px}
+.grid-wrap.skin-soft .grid th .fbtn.on{color:var(--gold)}
+.grid-wrap.skin-soft .grid td{padding:14px 12px;border-left:0;border-bottom:1px solid #eff1f6;font-size:13.5px;line-height:1.55}
+.grid-wrap.skin-soft .grid td.sticky-r{background:#fff}
+.grid-wrap.skin-soft .grid tr:hover td{background:#fffdf2}
+/* מרגיעים את הצבעים העזים: סכומים, תגיות פרויקט ופסי צבע של צמדים */
+.grid-wrap.skin-soft .grid td .ptag{background:transparent!important;color:#455070!important;font-weight:600;padding:0}
+.grid-wrap.skin-soft .grid tr[data-ptype] td:first-child{box-shadow:none}
+/* צמד הכנסה לאטלס + תשלום לספק: אותו צבע זיהוי, בגוון בהיר ועדין */
+.grid-wrap.skin-soft .grid tr.pairrow td{background:color-mix(in srgb, var(--pcb) 55%, #fff)!important;
+  border-top:0;border-bottom:1px solid color-mix(in srgb, var(--pcl) 14%, #fff)}
+.grid-wrap.skin-soft .grid tr.pairrow td:first-child{border-right:0;box-shadow:inset -3px 0 0 color-mix(in srgb, var(--pcl) 55%, #fff)}
+.grid-wrap.skin-soft .grid tr.pairrow td:last-child{border-left:0;box-shadow:inset 3px 0 0 color-mix(in srgb, var(--pcl) 55%, #fff)}
+.grid-wrap.skin-soft .grid tr.pairrow.pair-hi td{background:color-mix(in srgb, var(--pcb) 85%, #fff)!important}
+.grid-wrap.skin-soft .grid tr.pairrow .pair-tag{background:color-mix(in srgb, var(--pcl) 65%, #fff)}
+.grid-wrap.skin-soft .grid td[style*="var(--green)"],
+.grid-wrap.skin-soft .grid td[style*="var(--red)"]{font-weight:500!important}
+.grid-wrap.skin-soft .grid td.h-group,.grid-wrap.skin-soft .grid td.h-client{font-weight:500;color:#2a3450}
+.grid-wrap.skin-soft .chip{background:#fbfcfe;border-color:#dde2ec;color:#3b4560;padding:4px 10px;border-radius:8px;font-weight:500;font-size:12.5px}
+.grid-wrap.skin-soft .chip.linked{background:#f4fbf6;border-color:#cfe7d7;color:#3f7a52}
+.grid-wrap.skin-soft .chip.zero{background:#fdf5f5;border-color:#f0d3d3;color:#b34b4b;font-weight:600}
+.grid-wrap.skin-soft .status{font-weight:600;padding:4px 11px;border-radius:999px;font-size:12.5px}
+.grid-wrap.skin-soft .status.yes{background:#f2faf4;color:#3f7a52}
+.grid-wrap.skin-soft .status.no{background:#fdf5f5;color:#b34b4b}
+.grid-wrap.skin-soft .status.fc{background:#f5f6fa;color:#7b8399}
+.grid-wrap.skin-soft .grid tr.mrow td{background:#fafbfe!important;border-top:1px solid #e6e9f2;border-bottom:1px solid #e6e9f2;
+  padding-top:15px;padding-bottom:15px;font-size:13px}
+.grid-wrap.skin-soft .grid tr.cfsplit td{background:#fff!important}
+.grid-wrap.skin-soft .grid td.auto{background:#fcfdff}
+/* שורות מקובצות: במקום מילוי כהה – גוון בהיר עם פס צבע לזיהוי */
+.grid-wrap.skin-soft .grid tr.bankgrp td,.grid-wrap.skin-soft .grid tr.authgrp td,
+.grid-wrap.skin-soft .grid tr.ccgrp td,.grid-wrap.skin-soft .grid tr.salgrp td,
+.grid-wrap.skin-soft .grid tr.salgrp.pengrp td{color:#2a3450!important;font-weight:600;border-color:#eff1f6}
+.grid-wrap.skin-soft .grid tr.bankgrp td .muted,.grid-wrap.skin-soft .grid tr.authgrp td .muted,
+.grid-wrap.skin-soft .grid tr.ccgrp td .muted,.grid-wrap.skin-soft .grid tr.salgrp td .muted,
+.grid-wrap.skin-soft .grid tr.bankgrp td a,.grid-wrap.skin-soft .grid tr.authgrp td a,
+.grid-wrap.skin-soft .grid tr.ccgrp td a,.grid-wrap.skin-soft .grid tr.salgrp td a,
+.grid-wrap.skin-soft .grid tr.ccgrp td span,.grid-wrap.skin-soft .grid tr.ccgrp td b,
+.grid-wrap.skin-soft .grid tr.salgrp td span,.grid-wrap.skin-soft .grid tr.salgrp td b{color:#2a3450!important}
+.grid-wrap.skin-soft .grid tr.bankgrp td{background:#fffaec!important}
+.grid-wrap.skin-soft .grid tr.authgrp td{background:#f3f7ff!important}
+.grid-wrap.skin-soft .grid tr.ccgrp td{background:#f5f6f9!important}
+.grid-wrap.skin-soft .grid tr.salgrp td{background:#faf5f0!important}
+.grid-wrap.skin-soft .grid tr.salgrp.pengrp td{background:#fdf9f4!important}
+.grid-wrap.skin-soft .grid tr.bankgrp td:first-child{box-shadow:inset -4px 0 0 #d6a800}
+.grid-wrap.skin-soft .grid tr.authgrp td:first-child{box-shadow:inset -4px 0 0 #1d5fbf}
+.grid-wrap.skin-soft .grid tr.ccgrp td:first-child{box-shadow:inset -4px 0 0 #6b7386}
+.grid-wrap.skin-soft .grid tr.salgrp td:first-child{box-shadow:inset -4px 0 0 #6b4423}
+.grid-wrap.skin-soft .grid tr.salgrp.pengrp td:first-child{box-shadow:inset -4px 0 0 #a0703a}
+.grid-wrap.skin-soft .grid tr.bankgrp td .grp-toggle,.grid-wrap.skin-soft .grid tr.authgrp td .grp-toggle,
+.grid-wrap.skin-soft .grid tr.ccgrp td .grp-toggle,.grid-wrap.skin-soft .grid tr.salgrp td .grp-toggle{
+  background:#fff;color:#4b3d77;border-color:#d7dbe6}
+.grid-wrap.skin-soft .grid tr.bankgrp td .status.yes,.grid-wrap.skin-soft .grid tr.authgrp td .status.yes,
+.grid-wrap.skin-soft .grid tr.ccgrp td .status.yes,.grid-wrap.skin-soft .grid tr.salgrp td .status.yes{
+  background:#f2faf4;color:#3f7a52!important;border-color:transparent}
+.grid-wrap.skin-soft .grid tr.ccgrp td .status.fc,.grid-wrap.skin-soft .grid tr.authgrp td .status.fc{
+  background:#f5f6fa;color:#7b8399!important;border-color:transparent}
 .grid td.h-group{font-weight:600;color:var(--navy)}
 .grid td.h-client{font-weight:600}
 .grid td.h-group+td.h-client::before,.grid td.h-client+td.h-proj::before{content:"›";color:#9aa3b8;margin-inline-end:6px;font-weight:400}
@@ -712,6 +778,8 @@ function defaultState() {
       supplierPayOffsetDays: 0, salaryDateRule: 'payDate', includeForecast: true, autosave: true,
       // כמה ימים לפני סיום תוקף הזמנה להתחיל להתריע (ניתן לשינוי גם בכל הזמנה בנפרד)
       orderAlertDays: 30,
+      // מראה הטבלה בגיליון הראשי: 'classic' (צפוף וצבעוני) או 'soft' (מרווח ועדין)
+      cfSkin: 'classic',
       bankFee: { startMonth: '', history: [{ from: '0000-00', amount: 26 }], generated: {} },
       bankTxTypes: BANK_TX_TYPES.slice(),
       // קבוצות שמות של אותו אדם (השם הראשון הוא השם הראשי)
@@ -5957,7 +6025,8 @@ function renderCashflow(v) {
   const expense = r2(rows.reduce((s, r) => s + (r.dir === 'out' ? r.amount : 0), 0));
   const missingSup = rows.filter(r => r.docs && r.docs.some(dd => dd.zero)).length;
   let h = '<div class="crumb"><h2>גיליון ראשי – תזרים</h2><span class="meta">נגזר אוטומטית מחוצצי המקור · אין הזנה ידנית בגיליון זה</span><span class="grow"></span>' +
-    '<label style="font-size:13px"><input type="checkbox" id="cfForecast"' + (inc ? ' checked' : '') + '> כולל תנועות צפויות</label></div>';
+    '<label style="font-size:13px"><input type="checkbox" id="cfForecast"' + (inc ? ' checked' : '') + '> כולל תנועות צפויות</label>' +
+    '<button class="btn sm" data-act="cfskin" title="החלפת מראה הטבלה: מרווח ועדין או צפוף וצבעוני">🎨 מראה: <span class="status ' + (S.settings.cfSkin === 'soft' ? 'yes' : 'fc') + '">' + (S.settings.cfSkin === 'soft' ? 'מרווח' : 'רגיל') + '</span></button></div>';
   h += periodBarHTML(p);
   const msgs = [];
   if (!all.length) msgs.push(['info', 'הגיליון הראשי ריק. תנועות יופיעו כאן אוטומטית כשיוזנו שורות בחוצצי המקור (פרויקטים, עצמאיים ותפעול).']);
@@ -5976,7 +6045,8 @@ function renderCashflow(v) {
   if (fk.length) h += '<div class="filter-note">🔎 מסנן פעיל – הכנסות/הוצאות לפי השורות המסוננות. יתרות הפתיחה, הסגירה ועמודת היתרה מחושבות על כל התזרים.</div>';
   if (p.mode !== 'month') h += monthSummaryHTML(d);
   if (p.mode !== 'month' && p.summaryOnly) { v.innerHTML = h; bindCfInputs(); return; }
-  h += '<div class="grid-wrap" data-tab="main"><table class="grid"><thead><tr>' + CF_COLS.map(c => '<th class="' + (c.num ? 'num' : '') + '">' + c.label + ' <button class="fbtn' + (f[c.key] ? ' on' : '') + '" data-act="cffilter" data-key="' + c.key + '">▼</button></th>').join('') + '</tr></thead><tbody>';
+  const soft = S.settings.cfSkin === 'soft';
+  h += '<div class="grid-wrap' + (soft ? ' skin-soft' : '') + '" data-tab="main"><table class="grid"><thead><tr>' + CF_COLS.map(c => '<th class="' + (c.num ? 'num' : '') + '">' + c.label + ' <button class="fbtn' + (f[c.key] ? ' on' : '') + '" data-act="cffilter" data-key="' + c.key + '">▼</button></th>').join('') + '</tr></thead><tbody>';
   if (!rows.length) h += '<tr><td colspan="' + CF_COLS.length + '" style="padding:24px;text-align:center" class="muted">אין תנועות</td></tr>';
   const byMonth = [];
   for (const r of rows) { const m = r.date.slice(0, 7); if (!byMonth.length || byMonth[byMonth.length - 1].m !== m) byMonth.push({ m, rs: [] }); byMonth[byMonth.length - 1].rs.push(r); }
@@ -6155,6 +6225,7 @@ function viewAction(act, el, e) {
   if (alertAction(act, el, e)) return;
   switch (act) {
     case 'cfrebuild': render(); toast('התזרים נבנה מחדש מחוצצי המקור. נתוני המקור לא שונו.', 'ok'); break;
+    case 'cfskin': S.settings.cfSkin = S.settings.cfSkin === 'soft' ? 'classic' : 'soft'; markDirty(); render(); break;
     case 'cfclear': UI.filters.main = {}; render(); break;
     case 'cfsaltoggle': { UI.cfSalOpen = UI.cfSalOpen || {}; UI.cfSalOpen[el.dataset.k] = !UI.cfSalOpen[el.dataset.k]; render(); break; }
     case 'ccauthmatch': e.preventDefault && e.preventDefault(); ccAuthMatchModal(false); break;
