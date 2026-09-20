@@ -2615,10 +2615,31 @@ function yearPanelHTML(t) {
 /* ---------------- documents ---------------- */
 function findDoc(tabId, rowId, field) { return Object.values(S.docs).find(d => d.tabId === tabId && d.rowId === rowId && d.field === field) || null; }
 function docFieldsOf(t) { return t.cols.filter(c => c.type === 'doc' || c.type === 'supdoc'); }
+/* הצעת נתיב לחוצץ שאין לו עדיין: נגזרת מהנתיבים של החוצצים האחים –
+   אותה תיקיית אב, ושם החוצץ בסופה. זה מה שמונע מסמכים שקושרו ולא נשמרו בשום מקום. */
+function suggestDocPath(t) {
+  if ((t.holder.docPath || '').trim()) return '';
+  const paths = [];
+  if (t.isOps) {
+    for (const k of Object.keys(OPS)) { const p = ((S.ops[k] || {}).docPath || '').trim(); if (p && 'ops:' + k !== t.tabId) paths.push(p); }
+  } else if (t.entity) {
+    const same = Object.values(S.entities).filter(e => e.type === t.kind && e.id !== t.entity.id && (e.docPath || '').trim());
+    const cl = (t.entity.client || '').trim();
+    const near = same.filter(e => (e.client || '').trim() === cl);
+    (near.length ? near : same).forEach(e => paths.push(e.docPath.trim()));
+  }
+  if (!paths.length) return '';
+  const parent = paths[0].replace(/[\\/]+$/, '').split(/[\\/]/).slice(0, -1).join('\\');
+  return parent ? parent + '\\' + String(t.name).trim() : '';
+}
 function docTargetHTML(t) {
   const path = (t.holder.docPath || '').trim();
   if (!DocFS.supported) return '<span class="doctarget warn" title="פתח את האתר ב-Chrome או Edge במחשב">⚠ הדפדפן לא תומך בשמירה לתיקייה</span>';
-  if (!path) return '<span class="doctarget warn">⚠ הגדר נתיב</span>';
+  if (!path) {
+    const sug = suggestDocPath(t);
+    return '<span class="doctarget warn" title="בלי נתיב, מסמכים שתקשר לא נשמרים לתיקייה ולא ייפתחו אחרי רענון של הדף.">⚠ הגדר נתיב' +
+      (sug ? ' <button class="btn sm gold" data-act="docsuggest" data-path="' + esc(sug) + '" title="מילוי הנתיב ' + esc(sug) + ' לפי החוצצים האחרים – אפשר לערוך לפני העדכון">💡 הצעה</button>' : '') + '</span>';
+  }
   if (!DocFS.roots.length) return '<span class="doctarget warn" title="בחר פעם אחת תיקייה שמופיעה בנתיב – מומלץ את העליונה (למשל ' + esc((path.split(/[\\/]+/).filter(Boolean)[1]) || path) + '), ואז כל החוצצים יעבדו איתה. הדפדפן יזכור אותה.">⚠ תיקייה לא מחוברת <button class="btn sm gold" data-act="fsconnect">📁 חיבור</button></span>';
   const r = DocFS.resolve(path);
   if (!r.ok) return '<span class="doctarget warn" title="' + esc(r.error) + '">⚠ הנתיב לא בתוך התיקיות המחוברות <button class="btn sm gold" data-act="fsconnect">📁 חיבור תיקייה</button></span>';
@@ -3341,6 +3362,11 @@ $('#view').addEventListener('click', e => {
     case 'opendoc': openDoc(t, row, actEl.dataset.key); break;
     case 'editent': openEditEntityModal(t); break;
     case 'delent': openDeleteEntityModal(t); break;
+    case 'docsuggest': {
+      const inp = $('[data-act="docpath"]');
+      if (inp) { inp.value = actEl.dataset.path; inp.focus(); inp.select(); toast('הנתיב מולא לפי החוצצים האחרים – ערוך אם צריך ולחץ ״עדכון״', 'info', 6000); }
+      break;
+    }
     case 'savepath': { const inp = $('[data-act="docpath"]'); t.holder.docPath = inp.value.trim(); markDirty(); render(); toast('נתיב המסמכים עודכן', 'ok'); break; }
     case 'unlinkdoc': {
       const d = S.docs[actEl.dataset.doc];
