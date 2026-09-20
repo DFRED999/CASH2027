@@ -2639,8 +2639,27 @@ function docBarHTML(t) {
     '<div class="doc-side"><div class="r1"><span class="dp-label">נתיב:</span><input type="text" class="dp-path" data-act="docpath" value="' + esc(t.holder.docPath || '') + '" placeholder="C:\\ATLAS\\מסמכים\\שם החוצץ"><button class="btn sm" data-act="savepath">עדכון</button></div>' +
     '<div class="r2">' + docTargetHTML(t) +
     '<button class="btn sm doc-toggle" data-act="toggledocs">📄 מסמכים (' + docs.length + ')' + (unsaved ? ' <span class="badge">' + unsaved + '</span>' : '') + ' ' + (open ? '▴' : '▾') + '</button></div></div>' +
-    (open ? '<div class="doclist">' + (docs.length ? docs.map(d => { const r = rowById[d.rowId]; const col = t.cols.find(c => c.key === d.field); return '<div>📄 ' + esc(d.fileName) + ' ← שורה ' + esc(r ? r.serial : '?') + ' · ' + esc(col ? col.label : d.field) + ' ' + esc(d.number || '') + ' ' + status(d) + ' <button class="btn sm" data-act="unlinkdoc" data-doc="' + d.id + '">ביטול קישור</button></div>'; }).join('') : '<span class="muted">טרם קושרו מסמכים</span>') + '</div>' : '') +
+    (open ? '<div class="doclist">' + (docs.length ? docs.map(d => { const r = rowById[d.rowId]; const col = t.cols.find(c => c.key === d.field); const mir = d.mirrorOf ? ' <span class="muted" title="הקובץ נשמר בתיקייה של החוצץ המקורי ונפתח משם">· עותק מקושר</span>' : '';
+      return '<div>📄 ' + esc(d.fileName) + ' ← שורה ' + esc(r ? r.serial : '?') + ' · ' + esc(col ? col.label : d.field) + ' ' + esc(d.number || '') + mir + ' ' + status(d) + ' <button class="btn sm" data-act="unlinkdoc" data-doc="' + d.id + '">ביטול קישור</button></div>'; }).join('') : '<span class="muted">טרם קושרו מסמכים</span>') + '</div>' : '') +
     '</div>';
+}
+/* מסמך שקושר לשני חוצצים (תשלום לעצמאי ↔ תנועת הבנק) נשמר פיזית פעם אחת בלבד,
+   בתיקייה של החוצץ שבו קושר במקור. הפתיחה והשמירה החוזרת נעשות תמיד מול אותו חוצץ,
+   ולכן אפשר לפתוח את אותה חשבונית גם משורת הבנק וגם מחוצץ האדם. */
+function docSourceTab(t, doc) {
+  if (!doc) return t;
+  const hasPath = x => !!(x && x.holder && (x.holder.docPath || '').trim());
+  if (doc.mirrorOf && S.docs[doc.mirrorOf]) {
+    const st = tabInfo(S.docs[doc.mirrorOf].tabId);
+    if (hasPath(st)) return st;
+  }
+  if (hasPath(t)) return t;
+  for (const d of Object.values(S.docs)) {
+    if (d.mirrorOf !== doc.id) continue;
+    const st = tabInfo(d.tabId);
+    if (hasPath(st)) return st;
+  }
+  return t;
 }
 function docPathOf(t, doc) { const base = (t.holder.docPath || '').trim(); return doc && doc.subdir && base ? base.replace(/[\\/]+$/, '') + '/' + doc.subdir : base; }
 function resolveDocURL(t, doc) {
@@ -2655,9 +2674,11 @@ async function openDoc(t, row, field) {
   const val = String(row[field] || '').trim();
   const doc = findDoc(t.tabId, row.id, field);
   if (!doc) { toast('לא נמצא מסמך מקושר למספר ' + val + '. גרור את קובץ ה-PDF לאזור המסמכים כדי לקשר אותו.', 'warn', 5000); return; }
-  // 1) פתיחה מתוך תיקיית המסמכים שחוברה (כולל תת-תיקייה, למשל תיקיית עובד)
-  const dp = docPathOf(t, doc);
-  if (DocFS.roots.length && t.holder.docPath && DocFS.resolve(dp).ok) {
+  // 1) פתיחה מתוך תיקיית המסמכים שחוברה (כולל תת-תיקייה, למשל תיקיית עובד).
+  //    לעותק מקושר הפתיחה נעשית מהתיקייה של החוצץ שבו המסמך נשמר במקור.
+  const srcT = docSourceTab(t, doc);
+  const dp = docPathOf(srcT, doc);
+  if (DocFS.roots.length && srcT.holder.docPath && DocFS.resolve(dp).ok) {
     try {
       const granted = await DocFS.permission(true, DocFS.resolve(dp).root);
       if (!granted) throw Object.assign(new Error('no permission'), { name: 'NotAllowedError' });
@@ -2675,7 +2696,7 @@ async function openDoc(t, row, field) {
   // 2) קובץ שנגרר בסשן הנוכחי
   if (sessionBlobs[doc.id]) { window.open(sessionBlobs[doc.id] + (doc.page ? '#page=' + doc.page : ''), '_blank'); return; }
   // 3) ניסיון אחרון – קישור file:// לפי הנתיב
-  const url = resolveDocURL(t, doc);
+  const url = resolveDocURL(srcT, doc);
   if (!url) { toast('לא הוגדר נתיב שמירת מסמכים לחוצץ – לא ניתן לפתוח את ' + doc.fileName, 'err', 5000); return; }
   if (!DocFS.roots.length) { toast('חבר את תיקיית המסמכים (בחוצץ או בהגדרות) כדי לפתוח את ' + doc.fileName, 'warn', 6000); }
   window.open(url, '_blank');
@@ -2874,6 +2895,8 @@ async function commitPdfLinks(t, files, bg) {
       try { const r = await saveDocToFolder(t, doc, p.file); saved++; if (r.note) notes.push(p.file.name + ': ' + r.note); }
       catch (e) { doc.saveError = fsErrText(e); notes.push(p.file.name + ': השמירה נכשלה – ' + doc.saveError); }
     } else doc.saveError = why;
+    // תשלום לעצמאי: אותה חשבונית מקושרת גם לשורה המקבילה (בנק ↔ חוצץ האדם)
+    if (freeDocLink(t, p.row, p.field)) notes.push(p.file.name + ': קושר גם לשורה המקבילה ' + (t.kind === 'bank' ? 'בחוצץ האדם' : 'בחוצץ הבנק'));
   }
   closeModal(); markDirty(); render();
   if (saved === picks.length) toast(saved + ' מסמכים נשמרו בתיקייה ' + DocFS.displayTarget(path) + ' וקושרו', 'ok', 6000);
@@ -3319,7 +3342,12 @@ $('#view').addEventListener('click', e => {
     case 'editent': openEditEntityModal(t); break;
     case 'delent': openDeleteEntityModal(t); break;
     case 'savepath': { const inp = $('[data-act="docpath"]'); t.holder.docPath = inp.value.trim(); markDirty(); render(); toast('נתיב המסמכים עודכן', 'ok'); break; }
-    case 'unlinkdoc': delete S.docs[actEl.dataset.doc]; markDirty(); render(); break;
+    case 'unlinkdoc': {
+      const d = S.docs[actEl.dataset.doc];
+      // ביטול קישור של מסמך מקורי מסיר גם את העותק המקושר בצד השני
+      if (d) for (const x of Object.values(S.docs)) if (x.mirrorOf === d.id) delete S.docs[x.id];
+      delete S.docs[actEl.dataset.doc]; markDirty(); render(); break;
+    }
     case 'fsconnect': connectDocFolder(); break;
     case 'fsgrant': grantDocFolders(); break;
     case 'toggledocs': UI.docListOpen = UI.docListOpen || {}; UI.docListOpen[t.tabId] = !UI.docListOpen[t.tabId]; render(); break;
@@ -3328,10 +3356,11 @@ $('#view').addEventListener('click', e => {
       if (!doc || !file) return;
       (async () => {
         try {
-          if (!DocFS.roots.length || !DocFS.resolve(t.holder.docPath).ok) await DocFS.connect();
-          if (!(await DocFS.permission(true, (DocFS.resolve(t.holder.docPath) || {}).root))) throw Object.assign(new Error(''), { name: 'NotAllowedError' });
+          const st = docSourceTab(t, doc);
+          if (!DocFS.roots.length || !DocFS.resolve(st.holder.docPath).ok) await DocFS.connect();
+          if (!(await DocFS.permission(true, (DocFS.resolve(st.holder.docPath) || {}).root))) throw Object.assign(new Error(''), { name: 'NotAllowedError' });
           UI.fsGrant = false;
-          const r = await saveDocToFolder(t, doc, file);
+          const r = await saveDocToFolder(st, doc, file);
           markDirty(); render(); toast('נשמר אל ' + doc.savedTo + (r.note ? ' · ' + r.note : ''), 'ok', 6000);
         } catch (e) { doc.saveError = fsErrText(e); render(); toast('השמירה נכשלה: ' + doc.saveError, 'err', 7000); }
       })();
@@ -5477,6 +5506,23 @@ function freeDocMirror(ent, row, b) {
   S.docs[id] = Object.assign({}, src, tgt, { id, mirrorOf: src.id });
   if (sessionBlobs[src.id]) sessionBlobs[id] = sessionBlobs[src.id];
   if (sessionFiles[src.id]) sessionFiles[id] = sessionFiles[src.id];
+}
+/* אחרי קישור PDF לשורה – יצירת העותק המקושר בצד השני, כך שאותה חשבונית
+   נפתחת גם משורת הבנק וגם מחוצץ האדם. מחזיר true אם נוצר עותק. */
+function freeDocLink(t, row, field) {
+  if (t.kind === 'freelancer' && field === 'taxReceiptNo') {
+    const b = freeBankRowOf(row); if (!b) return false;
+    freeDocDrop('ops:bank', b.id, 'docNo');
+    freeDocMirror(t.entity, row, b);
+    return true;
+  }
+  if (t.kind === 'bank' && field === 'docNo') {
+    const link = freeRowOf(row); if (!link) return false;
+    freeDocDrop(link.ent.id, link.row.id, 'taxReceiptNo');
+    freeDocMirror(link.ent, link.row, row);
+    return true;
+  }
+  return false;
 }
 function freeDocDrop(tabId, rowId, field) {
   for (const d of Object.values(S.docs)) if (d.tabId === tabId && d.rowId === rowId && d.field === field && d.mirrorOf) delete S.docs[d.id];
