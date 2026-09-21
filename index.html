@@ -696,6 +696,10 @@ table.msum tfoot td{background:var(--gold-soft);font-weight:700}
 /* שורות חודש וקבוצות */
 .grid-wrap.skin-excel .grid tr.mrow td{background:#d9e2f3!important;border-top:2px solid #1f3864;border-bottom:1px solid #1f3864;font-size:13.5px}
 .grid-wrap.skin-excel .grid td.auto{font-weight:700}
+.pt-bottom{border-inline-start:5px solid var(--gold)}
+.pt-bottom .pt-line{font-size:15px;margin:4px 0}
+table.pt-sum tr.pt-tot td{background:#eef3fb}
+table.pt-sum tr.pt-gap td{background:#fff8e1}
 </style>
 </head>
 <body>
@@ -2350,7 +2354,7 @@ function renderSidebar() {
   const sb = $('#sidebar');
   const item = (id, label, count) => '<div class="sb-item' + (UI.view === id ? ' active' : '') + '" data-nav="' + id + '">' + esc(label) + (count !== undefined ? '<span class="sb-count">' + count + '</span>' : '') + '</div>';
   let h = '<button id="btnNew">＋ חדש</button>';
-  h += item('main', '📊 גיליון ראשי – תזרים');
+  h += item('main', '📊 גיליון ראשי – תזרים') + item('partners', '🤝 שותפים – איזון');
   for (const type of PROJECT_TYPES) {
     const ids = S.entityOrder.filter(id => S.entities[id].type === type);
     // "פרויקטים רגילים" הוסר מהמערכת – הקבוצה מוצגת רק אם נשארו בה חוצצים מגיבוי ישן
@@ -2453,7 +2457,7 @@ function render() {
   const focusKey = ae && ae.dataset && ae.dataset.row ? { row: ae.dataset.row, key: ae.dataset.key } : null;
   const gw = $('.grid-wrap'); const gs = gw ? { top: gw.scrollTop, left: gw.scrollLeft, tab: gw.dataset.tab } : null;
 
-  if (!['main', 'settings', 'anomalies', 'alerts'].includes(UI.view) && !String(UI.view).startsWith('person:') && !tabInfo(UI.view)) UI.view = 'main';
+  if (!['main', 'settings', 'anomalies', 'alerts', 'partners'].includes(UI.view) && !String(UI.view).startsWith('person:') && !tabInfo(UI.view)) UI.view = 'main';
   if (String(UI.view).startsWith('person:') && !personByKey(personState().key)) UI.view = 'main';
   renderSidebar();
   renderTopStats();
@@ -2462,6 +2466,7 @@ function render() {
   else if (UI.view === 'main') renderCashflow(v);
   else if (UI.view === 'settings') renderSettings(v);
   else if (UI.view === 'anomalies') renderAnomalies(v);
+  else if (UI.view === 'partners') renderPartners(v);
   else if (UI.view === 'alerts') renderAlerts(v);
   else if (UI.view === 'ops:salaries') renderSalaries(v, tabInfo(UI.view));
   else if (UI.view === 'ops:pensions') renderPensions(v, tabInfo(UI.view));
@@ -3308,6 +3313,11 @@ function setField(t, rowId, key, raw, type, isOv) {
 /* ---------------- view event delegation ---------------- */
 $('#view').addEventListener('change', e => {
   const el = e.target;
+  if (UI.view === 'partners') {
+    if (el.id === 'ptYear') { partnersUI().year = el.value; render(); return; }
+    if (el.id === 'ptDraw') { const v = String(el.value).trim() === '' ? '' : num(el.value); if (v === null) { toast('ערך לא תקין', 'err'); return; } partnersUI().draw = v; render(); return; }
+    if (el.dataset && el.dataset.pt) { partnersChange(el); return; }
+  }
   if (el.id === 'salEmpSel') { salState().emp = el.value; render(); return; }
   if (el.id === 'salYearSel') { salState().year = el.value; render(); return; }
   if (el.id === 'penEmpSel') { penState().emp = el.value; render(); return; }
@@ -3349,6 +3359,7 @@ $('#view').addEventListener('click', e => {
   const act = actEl.dataset.act;
   if (act === 'navback') { e.preventDefault(); navBack(); return; }
   if (act.startsWith('tp') && tabPeriodAction(act, actEl, tabInfo(UI.view))) { e.preventDefault(); return; }
+  if (UI.view === 'partners') { if (!partnersAction(act, actEl)) viewAction(act, actEl, e); return; }
   if (['main', 'settings', 'anomalies', 'alerts'].includes(UI.view)) { viewAction(act, actEl, e); return; }
   if (String(UI.view).startsWith('person:')) { personAction(act, actEl, e); return; }
   const t = tabInfo(UI.view); if (!t) return;
@@ -5856,7 +5867,7 @@ function tabPeriodAction(act, el, t) {
 /* ---------------- ניווט: חזרה למסך הקודם ---------------- */
 function navValid(v) {
   if (!v) return false;
-  if (['main', 'settings', 'anomalies', 'alerts'].includes(v)) return true;
+  if (['main', 'settings', 'anomalies', 'alerts', 'partners'].includes(v)) return true;
   if (String(v).startsWith('person:')) return !!personByKey(String(v).slice(7));
   return !!tabInfo(v);
 }
@@ -5864,6 +5875,7 @@ function viewName(v) {
   if (v === 'main') return 'גיליון ראשי';
   if (v === 'settings') return 'הגדרות';
   if (v === 'anomalies') return 'אנומליות';
+  if (v === 'partners') return 'שותפים';
   if (v === 'alerts') return 'התראות';
   if (String(v).startsWith('person:')) { const p = personByKey(String(v).slice(7)); return p ? p.name : 'כרטיס אדם'; }
   const t = tabInfo(v); return t ? t.name : '';
@@ -6920,6 +6932,330 @@ function bindCfInputs() {
     tb.addEventListener('mouseover', e => { const tr = e.target.closest('tr[data-pair]'); if (tr) hi(tr.dataset.pair, true); });
     tb.addEventListener('mouseout', e => { const tr = e.target.closest('tr[data-pair]'); if (tr) hi(tr.dataset.pair, false); });
   }
+}
+
+/* =====================================================================
+   חוצץ שותפים – איזון משיכות בין השותפים (נגזר אוטומטית, אין הזנה כפולה)
+   מקורות: חוצץ המשכורות (ברוטו + הפרשות מעסיק), חוצצי העצמאים של השותפים
+   (לפני מע״מ), ו"הוצאות משויכות" – עובדים/עצמאים שחלק מעלותם נזקף לשותף.
+   ההגדרות נשמרות ב-S.settings.partners.
+   ===================================================================== */
+function partnersState() {
+  const st = S.settings;
+  if (!st.partners || typeof st.partners !== 'object') st.partners = {};
+  const P = st.partners;
+  if (!Array.isArray(P.list)) P.list = [];
+  if (!Array.isArray(P.allocs)) P.allocs = [];
+  if (!P.rowPct || typeof P.rowPct !== 'object') P.rowPct = {};
+  if (!P.passRows || typeof P.passRows !== 'object') P.passRows = {};
+  if (!P.carry || typeof P.carry !== 'object') P.carry = {};
+  if (!P.closed || typeof P.closed !== 'object') P.closed = {};
+  if (P.passInclude === undefined) P.passInclude = false;
+  if (P.reserve === undefined) P.reserve = 0;
+  if (!P.bankRows || typeof P.bankRows !== 'object') P.bankRows = {};
+  if (P.loanInclude === undefined) P.loanInclude = true;
+  if (!P.txTypesAdded) {
+    const tt = st.bankTxTypes || (st.bankTxTypes = []);
+    ['הלוואת בעלים', 'החזר הלוואת בעלים'].forEach(x => { if (!tt.includes(x)) tt.push(x); });
+    P.txTypesAdded = true;
+  }
+  if (!P.seeded) {
+    // זריעה ראשונית: דניס וברי, משכורת לודמילה על דניס, אירה – חלקית על דניס
+    const emp = nm => (S.employees.find(e => String(e.name || '').includes(nm)) || {}).id || '';
+    const free = nm => (Object.values(S.entities).find(e => e.type === 'freelancer' && String(e.name || '').includes(nm)) || {}).id || '';
+    if (!P.list.length) P.list = [
+      { id: 'p1', name: 'דניס', empId: emp('דניס'), freeId: free('דניס'), share: 50 },
+      { id: 'p2', name: 'ברי', empId: emp('בארי') || emp('ברי'), freeId: free('בארי') || free('ברי'), share: 50 }
+    ];
+    if (!P.allocs.length) {
+      const lu = emp('לודמילה'), ira = free('אירה');
+      if (lu) P.allocs.push({ id: uid('al'), kind: 'emp', ref: lu, partner: 'p1', pct: 100 });
+      if (ira) P.allocs.push({ id: uid('al'), kind: 'free', ref: ira, partner: 'p1', pct: 50 });
+    }
+    P.seeded = true;
+  }
+  return P;
+}
+function partnersUI() { return UI.partners || (UI.partners = { year: curMonth().slice(0, 4), draw: '', open: {} }); }
+function partnerById(id) { return partnersState().list.find(p => p.id === id); }
+function empName(id) { const e = S.employees.find(x => x.id === id); return e ? e.name : '—'; }
+function freeName(id) { const e = S.entities[id]; return e ? e.name : '—'; }
+
+/* עלות משכורת לחברה: ברוטו + פנסיה מעסיק + פיצויים + השתלמות מעסיק.
+   חודש שהוזן בו נטו בלבד – ברוטו לפי ממוצע החודשים האחרים של אותו עובד באותה שנה. */
+function partnerSalaryItems(empId, year, today) {
+  const rows = S.ops.salaries.rows.filter(r => r.employeeId === empId && String(r.payDate || '').startsWith(year) && r.payDate <= today);
+  const grossKnown = rows.map(r => nz(r.grossTotal)).filter(v => v > 0);
+  const avg = grossKnown.length ? r2(grossKnown.reduce((a, b) => a + b, 0) / grossKnown.length) : 0;
+  const pen = {};
+  S.ops.pensions.rows.forEach(r => { if (r.employeeId === empId) { const k = r.year + '-' + pad2(r.month); pen[k] = r2((pen[k] || 0) + nz(r.erDeposit) + nz(r.severance)); } });
+  return rows.map(r => {
+    let gross = nz(r.grossTotal), note = '';
+    if (!gross) { gross = avg || nz(r.net); note = avg ? 'ברוטו לא הוזן – לפי ממוצע השנה' : 'הוזן נטו בלבד'; }
+    let er = nz(r.pensionEmployer) + nz(r.severance) + nz(r.kerenEmployer);
+    if (!er) er = pen[r.year + '-' + pad2(r.month)] || 0;
+    return { src: 'emp', srcId: empId, rowId: r.id, date: r.payDate, month: pad2(r.month) + '/' + r.year, type: 'משכורת', base: r2(gross), extra: r2(er), cost: r2(gross + er), note, net: nz(r.net), tab: 'ops:salaries' };
+  });
+}
+/* תשלומים לעצמאי: לפי הסכום לפני מע״מ (המע״מ מקוזז בחברה) */
+function partnerFreeItems(entId, year, today) {
+  const e = S.entities[entId]; if (!e) return [];
+  return e.rows.filter(r => String(r.payDate || '').startsWith(year) && r.payDate <= today).map(r => {
+    const c = calcRow('freelancer', r);
+    return { src: 'free', srcId: entId, rowId: r.id, date: r.payDate, month: pad2(r.month) + '/' + r.year, type: 'תשלום כעצמאי', base: r2(c.net), extra: 0, cost: r2(c.net), note: r.projectName || (r.taxReceiptNo ? 'קבלה ' + r.taxReceiptNo : ''), gross: c.amount, tab: entId };
+  });
+}
+/* תנועות בנק על שם השותף (שדה "גוף"): דיבידנד, הלוואת בעלים והחזרה, משיכות אחרות.
+   תנועה שמקושרת לחוצץ העצמאי, או הכנסה שהיא תשלום מעבר (עירייה), לא נכללת כאן. */
+function partnerNames(p) { return [p.name, p.empId ? empName(p.empId) : '', p.freeId ? freeName(p.freeId) : ''].map(x => String(x || '').trim()).filter(x => x.length > 2 && x !== '—'); }
+function partnerBankItems(p, year, today) {
+  const nms = partnerNames(p), out = [];
+  for (const b of S.ops.bank.rows) {
+    if (!String(b.date || '').startsWith(year) || b.date > today || b.freeRowId || b.authRowId || b.depId) continue;
+    const party = String(b.party || '');
+    if (!nms.some(nm => party.includes(nm))) continue;
+    const txt = [b.txType, b.description, b.notes].map(x => String(x || '')).join(' ');
+    const inc = nz(b.income), exp = nz(b.expense);
+    let kind = null, amt = 0;
+    if (/הלוו|הלוא/.test(txt)) { kind = exp ? 'הלוואת בעלים' : 'החזר הלוואת בעלים'; amt = exp ? exp : -inc; }
+    else if (exp && /דיבידנד|דבדנד/.test(txt)) { kind = 'דיבידנד'; amt = exp; }
+    else if (exp) { kind = 'משיכה אחרת מהבנק'; amt = exp; }
+    if (!kind) continue;
+    out.push({ src: 'bank', srcId: 'ops:bank', rowId: b.id, date: b.date, month: b.date.slice(5, 7) + '/' + b.date.slice(0, 4), type: kind, kindLabel: kind, base: r2(amt), extra: 0, cost: r2(amt), note: [b.txType, b.description].filter(Boolean).join(' · '), bankKey: 'bank|' + b.id, tab: 'ops:bank' });
+  }
+  return out;
+}
+/* תשלום מעבר: באותו יום נכנסה לבנק הכנסה על שם השותף באותו סכום (למשל עירייה → ברי) */
+function isPassThrough(p, it) {
+  if (it.src !== 'free') return false;
+  const nameBits = String(p.name || '').split(' ').concat(String(freeName(p.freeId)).split(' ')).filter(x => x.length > 1);
+  return S.ops.bank.rows.some(b => b.date === it.date && nz(b.income) > 0 && Math.abs(nz(b.income) - nz(it.gross)) < 1 &&
+    nameBits.some(nm => String(b.party || '').includes(nm)));
+}
+function partnersCalc(year) {
+  const P = partnersState(), today = todayISO();
+  const res = { year, partners: [], total: 0, warnings: [] };
+  for (const p of P.list) {
+    const items = [];
+    if (p.empId) partnerSalaryItems(p.empId, year, today).forEach(it => items.push(Object.assign(it, { kindLabel: 'משכורת', pct: 100 })));
+    if (p.freeId) partnerFreeItems(p.freeId, year, today).forEach(it => {
+      const key = 'free|' + it.rowId;
+      it.pass = isPassThrough(p, it);
+      const inc = it.pass ? (P.passRows[key] !== undefined ? !!P.passRows[key] : !!P.passInclude) : true;
+      items.push(Object.assign(it, { kindLabel: it.pass ? 'תשלום מעבר' : 'תשלום כעצמאי', pct: inc ? 100 : 0, passKey: key }));
+    });
+    partnerBankItems(p, year, today).forEach(it => {
+      const isLoan = /הלוואת/.test(it.kindLabel);
+      const def = isLoan ? !!P.loanInclude : true;
+      const inc = P.bankRows[it.bankKey] !== undefined ? !!P.bankRows[it.bankKey] : def;
+      items.push(Object.assign(it, { pct: inc ? 100 : 0 }));
+    });
+    for (const a of P.allocs.filter(a => a.partner === p.id)) {
+      const src = a.kind === 'emp' ? partnerSalaryItems(a.ref, year, today) : partnerFreeItems(a.ref, year, today);
+      src.forEach(it => {
+        const key = a.id + '|' + it.rowId;
+        const pct = P.rowPct[key] !== undefined ? nz(P.rowPct[key]) : nz(a.pct);
+        items.push(Object.assign(it, { kindLabel: 'משויך · ' + (a.kind === 'emp' ? empName(a.ref) : freeName(a.ref)), alloc: a, allocKey: key, pct }));
+      });
+    }
+    items.forEach(it => it.counted = r2(it.cost * it.pct / 100));
+    items.sort((a, b) => String(a.date).localeCompare(String(b.date)));
+    const carry = nz((P.carry[year] || {})[p.id]);
+    const taken = r2(items.reduce((s, it) => s + it.counted, 0) + carry);
+    const by = k => r2(items.filter(it => it.kindLabel === k || (k === 'משויך' && it.alloc)).reduce((s, it) => s + it.counted, 0));
+    res.partners.push({ p, items, carry, taken, salary: r2(items.filter(it => !it.alloc && it.src === 'emp').reduce((s, it) => s + it.counted, 0)),
+      free: by('תשלום כעצמאי'), pass: by('תשלום מעבר'), alloc: by('משויך'), div: by('דיבידנד'),
+      loan: r2(by('הלוואת בעלים') + by('החזר הלוואת בעלים')), other: by('משיכה אחרת מהבנק'),
+      loanOpen: r2(items.filter(it => /הלוואת/.test(it.kindLabel)).reduce((s, it) => s + it.cost, 0)) });
+    if (!p.empId && !p.freeId) res.warnings.push('לשותף ' + p.name + ' לא שויכו עובד או חוצץ עצמאי – יש לבחור בהגדרות למטה.');
+  }
+  const shareSum = P.list.reduce((s, p) => s + nz(p.share), 0) || 1;
+  res.total = r2(res.partners.reduce((s, x) => s + x.taken, 0));
+  res.partners.forEach(x => { x.share = nz(x.p.share) / shareSum; x.entitled = r2(res.total * x.share); x.gap = r2(x.taken - x.entitled); });
+  // כמה כל אחד צריך למשוך כדי להשוות לשותף שמשך הכי הרבה (ללא החזרים)
+  const lead = Math.max(...res.partners.map(x => x.share ? x.taken / x.share : 0), 0);
+  res.partners.forEach(x => { x.need = r2(Math.max(0, lead * x.share - x.taken)); });
+  if (Math.abs(shareSum - 100) > 0.01) res.warnings.push('סכום אחוזי השותפות הוא ' + shareSum + '% (לא 100%) – החישוב מנרמל לפי היחס.');
+  return res;
+}
+/* חלוקת סכום משיכה: קודם סוגרים את הפער, והיתרה לפי אחוזי השותפות */
+function partnersSplitDraw(res, amount) {
+  const out = res.partners.map(x => ({ x, add: 0 }));
+  let left = Math.max(0, nz(amount));
+  const needTot = out.reduce((s, o) => s + o.x.need, 0);
+  if (needTot > 0) {
+    const f = Math.min(1, left / needTot);
+    out.forEach(o => { o.add = r2(o.x.need * f); });
+    left = r2(left - out.reduce((s, o) => s + o.add, 0));
+  }
+  if (left > 0) out.forEach(o => { o.add = r2(o.add + left * o.x.share); });
+  return out;
+}
+function partnersMonthly(res) {
+  const months = [];
+  for (let m = 1; m <= 12; m++) {
+    const ym = res.year + '-' + pad2(m);
+    const vals = res.partners.map(x => r2(x.items.filter(it => String(it.date).slice(0, 7) === ym).reduce((s, it) => s + it.counted, 0)));
+    months.push({ ym, vals });
+  }
+  let cum = res.partners.map(x => x.carry);
+  return months.map(mo => {
+    cum = cum.map((c, i) => r2(c + mo.vals[i]));
+    const tot = cum.reduce((a, b) => a + b, 0);
+    return Object.assign(mo, { cum: cum.slice(), gaps: cum.map((c, i) => r2(c - tot * res.partners[i].share)) });
+  });
+}
+function renderPartners(v) {
+  const P = partnersState(), U = partnersUI();
+  const res = partnersCalc(U.year);
+  const [A, B] = res.partners;
+  const names = res.partners.map(x => esc(x.p.name));
+  const yrs = new Set([curMonth().slice(0, 4)]);
+  S.ops.salaries.rows.forEach(r => r.payDate && yrs.add(r.payDate.slice(0, 4)));
+  Object.keys(P.carry).forEach(y => yrs.add(y));
+  const closed = P.closed[U.year];
+  let h = '<div class="crumb">' + backBtnHTML() + '<h2>🤝 שותפים – איזון משיכות</h2><span class="meta">נגזר אוטומטית מהמשכורות, מחוצצי העצמאים, מתנועות בנק על שם השותף ומההוצאות המשויכות · אין הזנה ידנית</span><span class="grow"></span>' +
+    '<label style="font-size:13px">שנה <select id="ptYear">' + [...yrs].sort().reverse().map(y => '<option' + (y === U.year ? ' selected' : '') + '>' + y + '</option>').join('') + '</select></label></div>';
+  const msgs = res.warnings.map(w => ['warn', esc(w)]);
+  if (closed) msgs.push(['info', 'שנת ' + U.year + ' נסגרה ב-' + fmtDate(closed.at.slice(0, 10)) + ' · הפער הועבר כיתרת פתיחה לשנת ' + (+U.year + 1) + '.']);
+  const iraAlloc = P.allocs.find(a => a.kind === 'free' && String(freeName(a.ref)).includes('אירה'));
+  if (iraAlloc && !P.iraConfirmed) msgs.push(['warn', 'חלק ההוצאה על אירה שנזקף ל' + esc((partnerById(iraAlloc.partner) || {}).name || '') + ' מוגדר כרגע ל-' + iraAlloc.pct + '% – יש לקבוע את האחוז הנכון בהגדרות למטה (או לכל תשלום בנפרד בטבלה).']);
+  if (msgs.length) h += '<div style="display:flex;flex-direction:column;gap:6px;margin-bottom:10px">' + msgs.map(x => '<div class="msg ' + x[0] + '">' + x[1] + '</div>').join('') + '</div>';
+  // ---- כרטיסים
+  h += '<div class="stats">' + res.partners.map((x, i) => statHTML(x.p.name + ' – נלקח ' + U.year, fmtMoney(x.taken), i ? 'gold' : '')).join('') + statHTML('סה״כ שני השותפים', fmtMoney(res.total));
+  if (A && B) {
+    const diffAB = r2(A.gap - B.gap);
+    h += statHTML('מצב האיזון', '<span style="color:' + (Math.abs(diffAB) < 1 ? 'var(--green)' : 'var(--red)') + '">' + (Math.abs(diffAB) < 1 ? 'מאוזנים ✓' : esc((A.gap > B.gap ? A : B).p.name) + ' מקדים') + '</span>', 'red');
+    res.partners.forEach(x => { if (x.need > 0.5) h += statHTML(x.p.name + ' זכאי למשוך', '<span style="color:var(--green)">' + fmtMoney(x.need) + '</span>', 'green'); });
+  }
+  h += '</div>';
+  // ---- שורה תחתונה
+  if (A && B) {
+    const lead = A.need > 0.5 ? B : A.need < 0.5 && B.need > 0.5 ? A : null;
+    const lag = lead === A ? B : A;
+    h += '<div class="setting-card pt-bottom"><h3>השורה התחתונה</h3>' + (lead
+      ? '<p class="pt-line"><b>' + esc(lead.p.name) + '</b> משך ב-' + U.year + ' <b>' + fmtMoney(r2(lead.taken - lead.entitled)) + ' ₪</b> מעל חלקו (' + Math.round(lead.share * 100) + '%).</p>' +
+        '<p class="pt-line">לאיזון: <b>' + esc(lag.p.name) + '</b> זכאי למשוך מהחברה עוד <b style="color:var(--green)">' + fmtMoney(lag.need) + ' ₪</b>, או ש' + esc(lead.p.name) + ' מעביר ל' + esc(lag.p.name) + ' <b>' + fmtMoney(r2(lead.taken - lead.entitled)) + ' ₪</b> ישירות.</p>'
+      : '<p class="pt-line" style="color:var(--green)"><b>אתם מאוזנים.</b> כל משיכה נוספת – לפי אחוזי השותפות.</p>') + '</div>';
+  }
+  // ---- מחשבון משיכה
+  const bal = actualBalanceToday(), avail = r2(bal - nz(P.reserve));
+  const drawAmt = U.draw === '' ? '' : nz(U.draw);
+  h += '<div class="setting-card"><h3>💸 תכנון המשיכה הבאה</h3><div class="kv" style="margin-bottom:8px"><div>יתרה בבנק היום</div><div dir="ltr" style="text-align:right">' + fmtMoney(bal) + '</div><div>רזרבה שנשארת בחברה</div><div dir="ltr" style="text-align:right">' + fmtMoney(P.reserve) + '</div><div><b>זמין לחלוקה</b></div><div dir="ltr" style="text-align:right"><b>' + fmtMoney(avail) + '</b></div></div>' +
+    '<div class="toolbar"><label>סכום שרוצים למשוך עכשיו (שני השותפים יחד) <input id="ptDraw" value="' + esc(drawAmt === '' ? '' : fmtMoney(drawAmt)) + '" placeholder="למשל 60,000" style="direction:ltr;width:140px"></label>' +
+    '<button class="btn sm" data-act="ptdrawgap">סכום שסוגר את הפער</button><button class="btn sm" data-act="ptdrawavail">כל הזמין</button></div>';
+  if (drawAmt !== '' && drawAmt > 0) {
+    const sp = partnersSplitDraw(res, drawAmt);
+    h += '<table class="simple" style="max-width:640px;margin-top:8px"><tr><th>שותף</th><th>ימשוך עכשיו</th><th>סה״כ אחרי המשיכה</th><th>פער אחרי המשיכה</th></tr>';
+    const newTot = r2(res.total + sp.reduce((s, o) => s + o.add, 0));
+    sp.forEach(o => { const t = r2(o.x.taken + o.add), g = r2(t - newTot * o.x.share); h += '<tr><td>' + esc(o.x.p.name) + '</td><td class="num"><b>' + fmtMoney(o.add) + '</b></td><td class="num">' + fmtMoney(t) + '</td><td class="num"' + (Math.abs(g) >= 1 ? ' style="color:var(--red)"' : ' style="color:var(--green)"') + '>' + (Math.abs(g) < 1 ? 'מאוזן ✓' : fmtMoney(g)) + '</td></tr>'; });
+    h += '</table>';
+    if (drawAmt > avail) h += '<div class="msg warn" style="margin-top:6px">הסכום גבוה מהזמין לחלוקה (' + fmtMoney(avail) + ').</div>';
+  }
+  h += '<div class="hint muted" style="margin-top:6px">החלוקה מכסה קודם את הפער, והיתרה מתחלקת לפי אחוזי השותפות. המשיכה עצמה נרשמת כרגיל – בחוצץ העצמאי של השותף או במשכורת.</div></div>';
+  // ---- טבלת רכיבים
+  h += '<div class="setting-card"><h3>מה כל שותף קיבל (עלות לחברה)</h3><table class="simple pt-sum"><tr><th>רכיב</th>' + names.map(n => '<th>' + n + '</th>').join('') + (res.partners.length === 2 ? '<th>הפרש</th>' : '') + '</tr>';
+  const comp = [['יתרת פתיחה מהשנה הקודמת', 'carry'], ['משכורת (ברוטו + הפרשות מעסיק)', 'salary'], ['תשלומים כעצמאי (לפני מע״מ)', 'free'], ['הוצאות משויכות (לודמילה, אירה…)', 'alloc'], ['דיבידנד', 'div'], ['הלוואות בעלים (נטו אחרי החזרים)', 'loan'], ['משיכות אחרות מהבנק', 'other'], ['תשלומי מעבר (עירייה)', 'pass']];
+  comp.forEach(([l, k]) => { if ((k === 'carry' || k === 'other') && !res.partners.some(x => x[k])) return; h += '<tr><td>' + l + '</td>' + res.partners.map(x => '<td class="num">' + fmtMoney(x[k], true) + '</td>').join('') + (res.partners.length === 2 ? '<td class="num">' + fmtMoney(r2(A[k] - B[k]), true) + '</td>' : '') + '</tr>'; });
+  h += '<tr class="pt-tot"><td><b>סה״כ נלקח</b></td>' + res.partners.map(x => '<td class="num"><b>' + fmtMoney(x.taken) + '</b></td>').join('') + (res.partners.length === 2 ? '<td class="num"><b>' + fmtMoney(r2(A.taken - B.taken)) + '</b></td>' : '') + '</tr>';
+  h += '<tr><td>מגיע לפי חלק בשותפות</td>' + res.partners.map(x => '<td class="num">' + fmtMoney(x.entitled) + ' <span class="muted">(' + Math.round(x.share * 100) + '%)</span></td>').join('') + (res.partners.length === 2 ? '<td></td>' : '') + '</tr>';
+  if (res.partners.some(x => x.loanOpen)) h += '<tr><td class="muted">הלוואות בעלים פתוחות (לא הוחזרו)</td>' + res.partners.map(x => '<td class="num muted">' + fmtMoney(x.loanOpen, true) + '</td>').join('') + (res.partners.length === 2 ? '<td></td>' : '') + '</tr>';
+  h += '<tr class="pt-gap"><td><b>פער (נלקח פחות מגיע)</b></td>' + res.partners.map(x => '<td class="num" style="color:' + (x.gap > 0.5 ? 'var(--red)' : x.gap < -0.5 ? 'var(--green)' : 'inherit') + '"><b>' + fmtMoney(x.gap) + '</b></td>').join('') + (res.partners.length === 2 ? '<td></td>' : '') + '</tr></table></div>';
+  // ---- חודשי
+  const mon = partnersMonthly(res);
+  h += '<div class="setting-card"><h3>לפי חודש</h3><table class="simple"><tr><th>חודש</th>' + names.map(n => '<th>' + n + ' – בחודש</th>').join('') + names.map(n => '<th>' + n + ' – מצטבר</th>').join('') + names.map(n => '<th>פער ' + n + '</th>').join('') + '</tr>';
+  mon.forEach(m => {
+    if (m.ym > curMonth() && !m.vals.some(Boolean)) return;
+    h += '<tr><td>' + esc(monthName(m.ym)) + '</td>' + m.vals.map(x => '<td class="num">' + fmtMoney(x, true) + '</td>').join('') + m.cum.map(x => '<td class="num">' + fmtMoney(x) + '</td>').join('') +
+      m.gaps.map(g => '<td class="num" style="color:' + (g > 0.5 ? 'var(--red)' : g < -0.5 ? 'var(--green)' : 'inherit') + '">' + fmtMoney(g) + '</td>').join('') + '</tr>';
+  });
+  h += '</table><div class="hint muted">פער חיובי (אדום) = משך מעל חלקו עד אותו חודש.</div></div>';
+  // ---- פירוט
+  res.partners.forEach(x => {
+    const open = U.open[x.p.id];
+    h += '<div class="setting-card"><h3 style="cursor:pointer" data-act="pttoggle" data-p="' + x.p.id + '">' + (open ? '▼' : '◀') + ' פירוט ' + esc(x.p.name) + ' <span class="muted">(' + x.items.length + ' תשלומים · ' + fmtMoney(x.taken) + ')</span></h3>';
+    if (open) {
+      h += '<table class="simple"><tr><th>תאריך תשלום</th><th>עבור חודש</th><th>סוג</th><th>פירוט</th><th>ברוטו / לפני מע״מ</th><th>הפרשות מעסיק</th><th>עלות לחברה</th><th>% נזקף</th><th>נספר</th></tr>';
+      x.items.forEach(it => {
+        let pctCell = '100%';
+        if (it.alloc) pctCell = '<input data-pt="rowpct" data-key="' + esc(it.allocKey) + '" value="' + esc(it.pct) + '" style="width:54px;direction:ltr;background:#fff2cc">%';
+        else if (it.pass) pctCell = '<label><input type="checkbox" data-pt="pass" data-key="' + esc(it.passKey) + '"' + (it.pct ? ' checked' : '') + '> לספור</label>';
+        else if (it.bankKey) pctCell = '<label><input type="checkbox" data-pt="bankrow" data-key="' + esc(it.bankKey) + '"' + (it.pct ? ' checked' : '') + '> לספור</label>';
+        h += '<tr' + (it.pct ? '' : ' style="opacity:.55"') + '><td>' + fmtDate(it.date) + '</td><td>' + esc(it.month) + '</td><td>' + esc(it.kindLabel) + '</td><td class="muted">' + esc(it.note || '') + '</td>' +
+          '<td class="num">' + fmtMoney(it.base) + '</td><td class="num">' + fmtMoney(it.extra, true) + '</td><td class="num">' + fmtMoney(it.cost) + '</td><td>' + pctCell + '</td><td class="num"><b>' + fmtMoney(it.counted, true) + '</b></td></tr>';
+      });
+      if (x.carry) h += '<tr><td colspan="8">יתרת פתיחה מסגירת השנה הקודמת</td><td class="num"><b>' + fmtMoney(x.carry) + '</b></td></tr>';
+      h += '</table>';
+    }
+    h += '</div>';
+  });
+  // ---- הגדרות
+  const empOpts = sel => '<option value="">—</option>' + S.employees.map(e => '<option value="' + e.id + '"' + (e.id === sel ? ' selected' : '') + '>' + esc(e.name) + '</option>').join('');
+  const freeOpts = sel => '<option value="">—</option>' + S.entityOrder.filter(id => S.entities[id].type === 'freelancer').map(id => '<option value="' + id + '"' + (id === sel ? ' selected' : '') + '>' + esc(S.entities[id].name) + '</option>').join('');
+  const partOpts = sel => P.list.map(p => '<option value="' + p.id + '"' + (p.id === sel ? ' selected' : '') + '>' + esc(p.name) + '</option>').join('');
+  h += '<div class="setting-card"><h3>⚙ הגדרות איזון</h3><table class="simple" style="max-width:780px"><tr><th>שותף</th><th>% בשותפות</th><th>כעובד (משכורת)</th><th>חוצץ עצמאי</th></tr>' +
+    P.list.map(p => '<tr><td><input data-pt="pname" data-id="' + p.id + '" value="' + esc(p.name) + '" style="width:90px"></td><td><input data-pt="share" data-id="' + p.id + '" value="' + esc(p.share) + '" style="width:60px;direction:ltr;background:#fff2cc">%</td><td><select data-pt="emp" data-id="' + p.id + '">' + empOpts(p.empId) + '</select></td><td><select data-pt="free" data-id="' + p.id + '">' + freeOpts(p.freeId) + '</select></td></tr>').join('') + '</table>';
+  h += '<h4 style="margin:14px 0 6px">הוצאות משויכות לשותף</h4><div class="hint muted" style="margin-bottom:6px">עובד או עצמאי שחלק מהעלות שלו נזקף לשותף מסוים. האחוז כאן הוא ברירת המחדל; אפשר לשנות לכל תשלום בנפרד בטבלת הפירוט.</div>' +
+    '<table class="simple" style="max-width:780px"><tr><th>מקור</th><th>נזקף ל</th><th>% ברירת מחדל</th><th></th></tr>' +
+    P.allocs.map(a => '<tr><td>' + (a.kind === 'emp' ? 'עובד: <select data-pt="aref" data-id="' + a.id + '">' + empOpts(a.ref) + '</select>' : 'עצמאי: <select data-pt="aref" data-id="' + a.id + '">' + freeOpts(a.ref) + '</select>') + '</td><td><select data-pt="apartner" data-id="' + a.id + '">' + partOpts(a.partner) + '</select></td><td><input data-pt="apct" data-id="' + a.id + '" value="' + esc(a.pct) + '" style="width:60px;direction:ltr;background:#fff2cc">%</td><td><button class="btn sm danger" data-act="ptdelalloc" data-id="' + a.id + '">הסרה</button></td></tr>').join('') +
+    '</table><div class="toolbar" style="margin-top:6px"><button class="btn sm" data-act="ptaddalloc" data-kind="emp">＋ עובד משויך</button><button class="btn sm" data-act="ptaddalloc" data-kind="free">＋ עצמאי משויך</button></div>';
+  h += '<div class="setting-grid" style="margin-top:12px"><div class="form-row"><label>תשלומי מעבר (למשל עירייה → ברי)</label><select data-pt="passInclude"><option value="0"' + (!P.passInclude ? ' selected' : '') + '>לא נספרים כמשיכה</option><option value="1"' + (P.passInclude ? ' selected' : '') + '>נספרים כמשיכה</option></select><div class="hint">תשלום לשותף שבאותו יום נכנסה לבנק הכנסה על שמו באותו סכום. ניתן לשנות לכל תשלום בפירוט.</div></div>' +
+    '<div class="form-row"><label>הלוואות בעלים</label><select data-pt="loanInclude"><option value="1"' + (P.loanInclude ? ' selected' : '') + '>נספרות באיזון עד שמוחזרות</option><option value="0"' + (!P.loanInclude ? ' selected' : '') + '>לא נספרות (רק מוצגות)</option></select><div class="hint">תנועת בנק על שם השותף שבתיאור או בסוג שלה מופיע "הלוואה". החזר (הכנסה) מקטין את היתרה.</div></div>' +
+    '<div class="form-row"><label>רזרבה שנשארת בחברה (₪)</label><input data-pt="reserve" value="' + esc(fmtMoney(P.reserve)) + '" style="direction:ltr"></div></div>';
+  h += '<div class="toolbar" style="margin-top:12px"><button class="btn" data-act="ptxlsx">📗 Excel</button>' + (closed ? '<button class="btn danger" data-act="ptreopen">ביטול סגירת שנת ' + U.year + '</button>' : '<button class="btn gold" data-act="ptclose">🔒 סגירת שנת ' + U.year + ' והעברת הפער לשנה הבאה</button>') + '</div>' +
+    '<div class="hint muted" style="margin-top:8px">בסיס החישוב: תשלומים שיצאו בפועל בשנה (לפי תאריך התשלום, עד היום). משכורת לפי ברוטו + הפרשות מעסיק – העלות לחברה; תשלום לעצמאי לפני מע״מ. ביטוח לאומי מעסיק אינו רשום באתר ולכן לא נכלל. זהו איזון משיכות – חלוקת רווח סופית כדאי לאשר מול רואה החשבון.</div></div>';
+  v.innerHTML = h;
+}
+function partnersChange(el) {
+  const P = partnersState(), k = el.dataset.pt, id = el.dataset.id;
+  const p = id ? P.list.find(x => x.id === id) : null, a = id ? P.allocs.find(x => x.id === id) : null;
+  const n = () => { const v = num(el.value); if (v === null) { toast('ערך לא תקין', 'err'); return null; } return v; };
+  switch (k) {
+    case 'pname': if (p) p.name = el.value.trim() || p.name; break;
+    case 'share': { const v = n(); if (v === null) break; p.share = v; break; }
+    case 'emp': p.empId = el.value; break;
+    case 'free': p.freeId = el.value; break;
+    case 'aref': a.ref = el.value; break;
+    case 'apartner': a.partner = el.value; break;
+    case 'apct': { const v = n(); if (v === null) break; a.pct = Math.max(0, Math.min(100, v)); if (a.kind === 'free' && String(freeName(a.ref)).includes('אירה')) P.iraConfirmed = true; break; }
+    case 'rowpct': { const v = n(); if (v === null) break; P.rowPct[el.dataset.key] = Math.max(0, Math.min(100, v)); P.iraConfirmed = true; break; }
+    case 'pass': P.passRows[el.dataset.key] = el.checked; break;
+    case 'bankrow': P.bankRows[el.dataset.key] = el.checked; break;
+    case 'loanInclude': P.loanInclude = el.value === '1'; Object.keys(P.bankRows).forEach(k => { const b = S.ops.bank.rows.find(x => 'bank|' + x.id === k); if (b && /הלוו|הלוא/.test([b.txType, b.description, b.notes].join(' '))) delete P.bankRows[k]; }); break;
+    case 'passInclude': P.passInclude = el.value === '1'; P.passRows = {}; break;
+    case 'reserve': { const v = n(); if (v === null) break; P.reserve = v; break; }
+  }
+  markDirty(); render();
+}
+function partnersAction(act, el) {
+  const P = partnersState(), U = partnersUI();
+  switch (act) {
+    case 'pttoggle': U.open[el.dataset.p] = !U.open[el.dataset.p]; render(); return true;
+    case 'ptdrawgap': { const res = partnersCalc(U.year); U.draw = r2(res.partners.reduce((s, x) => s + x.need, 0)); render(); return true; }
+    case 'ptdrawavail': U.draw = Math.max(0, r2(actualBalanceToday() - nz(P.reserve))); render(); return true;
+    case 'ptaddalloc': P.allocs.push({ id: uid('al'), kind: el.dataset.kind, ref: '', partner: P.list[0] ? P.list[0].id : '', pct: 100 }); markDirty(); render(); return true;
+    case 'ptdelalloc': P.allocs = P.allocs.filter(a => a.id !== el.dataset.id); markDirty(); render(); return true;
+    case 'ptclose': {
+      const res = partnersCalc(U.year), ny = String(+U.year + 1);
+      confirmModal('סגירת שנת ' + U.year, '<p>הפער של כל שותף יועבר כיתרת פתיחה לשנת ' + ny + ':</p><ul>' + res.partners.map(x => '<li>' + esc(x.p.name) + ': ' + fmtMoney(x.gap) + '</li>').join('') + '</ul><p class="muted">הנתונים עצמם לא משתנים. ניתן לבטל את הסגירה.</p>', 'סגירה', () => {
+        P.carry[ny] = {}; res.partners.forEach(x => { P.carry[ny][x.p.id] = x.gap; });
+        P.closed[U.year] = { at: new Date().toISOString(), gaps: Object.fromEntries(res.partners.map(x => [x.p.id, x.gap])) };
+        markDirty(); render(); toast('השנה נסגרה – הפער הועבר ל-' + ny, 'ok');
+      });
+      return true;
+    }
+    case 'ptreopen': { delete P.carry[String(+U.year + 1)]; delete P.closed[U.year]; markDirty(); render(); toast('סגירת השנה בוטלה', 'ok'); return true; }
+    case 'ptxlsx': {
+      const res = partnersCalc(U.year);
+      const body = [];
+      res.partners.forEach(x => x.items.forEach(it => body.push([x.p.name, fmtDate(it.date), it.month, it.kindLabel, it.note || '', it.base, it.extra, it.cost, it.pct, it.counted])));
+      res.partners.forEach(x => body.push([x.p.name, '', '', 'סה״כ נלקח', '', '', '', '', '', x.taken]));
+      res.partners.forEach(x => body.push([x.p.name, '', '', 'פער מול חלק בשותפות', '', '', '', '', '', x.gap]));
+      exportExcel('איזון שותפים ' + U.year, ['שותף', 'תאריך תשלום', 'עבור חודש', 'סוג', 'פירוט', 'ברוטו / לפני מע״מ', 'הפרשות מעסיק', 'עלות לחברה', '% נזקף', 'נספר'], body);
+      return true;
+    }
+  }
+  return false;
 }
 
 /* ---------------- non-tab actions ---------------- */
