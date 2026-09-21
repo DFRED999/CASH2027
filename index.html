@@ -700,6 +700,27 @@ table.msum tfoot td{background:var(--gold-soft);font-weight:700}
 .pt-bottom .pt-line{font-size:15px;margin:4px 0}
 table.pt-sum tr.pt-tot td{background:#eef3fb}
 table.pt-sum tr.pt-gap td{background:#fff8e1}
+.coll-grid{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:12px;align-items:start}
+.coll-grid .setting-card{margin-bottom:12px}
+@media (max-width:1000px){.coll-grid{grid-template-columns:1fr}}
+.coll-click{cursor:pointer}
+.coll-click:hover td{background:#fffbe6}
+.coll-wrap{overflow-x:auto}
+table.coll-tbl td,table.coll-tbl th{white-space:nowrap}
+#view .toolbar .seg{display:inline-flex;border:1px solid var(--navy);border-radius:8px;overflow:hidden}
+#view .toolbar .seg button{border:0;background:#fff;color:var(--navy);padding:6px 14px;font-weight:500;cursor:pointer}
+#view .toolbar .seg button+button{border-right:1px solid var(--navy)}
+#view .toolbar .seg button.on{background:var(--navy);color:#fff}
+.todo-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:12px;align-items:start}
+@media (max-width:1100px){.todo-grid{grid-template-columns:1fr}}
+.todo-box{background:#fff;border:1px solid var(--line);border-radius:10px;overflow:hidden;border-top:4px solid var(--navy)}
+.todo-box.red{border-top-color:var(--red)}.todo-box.gold{border-top-color:var(--gold)}.todo-box.blue{border-top-color:#2f6fc4}
+.todo-h{display:flex;justify-content:space-between;align-items:center;padding:9px 12px;background:#f4f6fa;font-weight:700;cursor:pointer}
+.todo-n{background:var(--navy);color:#fff;border-radius:999px;padding:1px 9px;font-size:12px}
+.todo-box.red .todo-n{background:var(--red)}.todo-box.gold .todo-n{background:#b8860b}.todo-box.blue .todo-n{background:#2f6fc4}
+.todo-row{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 12px;border-top:1px solid #eef0f5;font-size:13px}
+.todo-empty{padding:12px;color:var(--green);font-size:13px}
+.todo-list{max-height:340px;overflow-y:auto}
 </style>
 </head>
 <body>
@@ -2354,7 +2375,7 @@ function renderSidebar() {
   const sb = $('#sidebar');
   const item = (id, label, count) => '<div class="sb-item' + (UI.view === id ? ' active' : '') + '" data-nav="' + id + '">' + esc(label) + (count !== undefined ? '<span class="sb-count">' + count + '</span>' : '') + '</div>';
   let h = '<button id="btnNew">＋ חדש</button>';
-  h += item('main', '📊 גיליון ראשי – תזרים') + item('partners', '🤝 שותפים – איזון');
+  h += item('main', '📊 גיליון ראשי – תזרים') + item('collect', '📋 דשבורד גבייה', collectRows().length || undefined) + item('partners', '🤝 שותפים – איזון');
   for (const type of PROJECT_TYPES) {
     const ids = S.entityOrder.filter(id => S.entities[id].type === type);
     // "פרויקטים רגילים" הוסר מהמערכת – הקבוצה מוצגת רק אם נשארו בה חוצצים מגיבוי ישן
@@ -2457,7 +2478,7 @@ function render() {
   const focusKey = ae && ae.dataset && ae.dataset.row ? { row: ae.dataset.row, key: ae.dataset.key } : null;
   const gw = $('.grid-wrap'); const gs = gw ? { top: gw.scrollTop, left: gw.scrollLeft, tab: gw.dataset.tab } : null;
 
-  if (!['main', 'settings', 'anomalies', 'alerts', 'partners'].includes(UI.view) && !String(UI.view).startsWith('person:') && !tabInfo(UI.view)) UI.view = 'main';
+  if (!['main', 'settings', 'anomalies', 'alerts', 'partners', 'collect'].includes(UI.view) && !String(UI.view).startsWith('person:') && !tabInfo(UI.view)) UI.view = 'main';
   if (String(UI.view).startsWith('person:') && !personByKey(personState().key)) UI.view = 'main';
   renderSidebar();
   renderTopStats();
@@ -2467,6 +2488,7 @@ function render() {
   else if (UI.view === 'settings') renderSettings(v);
   else if (UI.view === 'anomalies') renderAnomalies(v);
   else if (UI.view === 'partners') renderPartners(v);
+  else if (UI.view === 'collect') renderCollect(v);
   else if (UI.view === 'alerts') renderAlerts(v);
   else if (UI.view === 'ops:salaries') renderSalaries(v, tabInfo(UI.view));
   else if (UI.view === 'ops:pensions') renderPensions(v, tabInfo(UI.view));
@@ -3313,6 +3335,7 @@ function setField(t, rowId, key, raw, type, isOv) {
 /* ---------------- view event delegation ---------------- */
 $('#view').addEventListener('change', e => {
   const el = e.target;
+  if (UI.view === 'collect' && el.dataset && el.dataset.col) { collectChange(el); return; }
   if (UI.view === 'partners') {
     if (el.id === 'ptYear') { partnersUI().year = el.value; render(); return; }
     if (el.id === 'ptDraw') { const v = String(el.value).trim() === '' ? '' : num(el.value); if (v === null) { toast('ערך לא תקין', 'err'); return; } partnersUI().draw = v; render(); return; }
@@ -3360,6 +3383,7 @@ $('#view').addEventListener('click', e => {
   if (act === 'navback') { e.preventDefault(); navBack(); return; }
   if (act.startsWith('tp') && tabPeriodAction(act, actEl, tabInfo(UI.view))) { e.preventDefault(); return; }
   if (UI.view === 'partners') { if (!partnersAction(act, actEl)) viewAction(act, actEl, e); return; }
+  if (UI.view === 'collect') { e.preventDefault && actEl.tagName === 'A' && e.preventDefault(); if (!collectAction(act, actEl)) viewAction(act, actEl, e); return; }
   if (['main', 'settings', 'anomalies', 'alerts'].includes(UI.view)) { viewAction(act, actEl, e); return; }
   if (String(UI.view).startsWith('person:')) { personAction(act, actEl, e); return; }
   const t = tabInfo(UI.view); if (!t) return;
@@ -5867,7 +5891,7 @@ function tabPeriodAction(act, el, t) {
 /* ---------------- ניווט: חזרה למסך הקודם ---------------- */
 function navValid(v) {
   if (!v) return false;
-  if (['main', 'settings', 'anomalies', 'alerts', 'partners'].includes(v)) return true;
+  if (['main', 'settings', 'anomalies', 'alerts', 'partners', 'collect'].includes(v)) return true;
   if (String(v).startsWith('person:')) return !!personByKey(String(v).slice(7));
   return !!tabInfo(v);
 }
@@ -5876,6 +5900,7 @@ function viewName(v) {
   if (v === 'settings') return 'הגדרות';
   if (v === 'anomalies') return 'אנומליות';
   if (v === 'partners') return 'שותפים';
+  if (v === 'collect') return 'דשבורד גבייה';
   if (v === 'alerts') return 'התראות';
   if (String(v).startsWith('person:')) { const p = personByKey(String(v).slice(7)); return p ? p.name : 'כרטיס אדם'; }
   const t = tabInfo(v); return t ? t.name : '';
@@ -7252,6 +7277,188 @@ function partnersAction(act, el) {
       res.partners.forEach(x => body.push([x.p.name, '', '', 'סה״כ נלקח', '', '', '', '', '', x.taken]));
       res.partners.forEach(x => body.push([x.p.name, '', '', 'פער מול חלק בשותפות', '', '', '', '', '', x.gap]));
       exportExcel('איזון שותפים ' + U.year, ['שותף', 'תאריך תשלום', 'עבור חודש', 'סוג', 'פירוט', 'ברוטו / לפני מע״מ', 'הפרשות מעסיק', 'עלות לחברה', '% נזקף', 'נספר'], body);
+      return true;
+    }
+  }
+  return false;
+}
+
+/* =====================================================================
+   דשבורד גבייה – חשבוניות משהב״ט ויזם שטרם שולמו (נגזר אוטומטית מהחוצצים)
+   "טרם שולם" = לא הוזנה ח. מס קבלה / קבלה (אותו כלל שקובע את תאריך הכסף בתזרים)
+   ===================================================================== */
+function collectUI() { return UI.collect || (UI.collect = { type: '', client: '', owner: '', status: '', q: '', open: {} }); }
+function daysBetween(a, b) { if (!a || !b) return null; return Math.round((new Date(b + 'T00:00:00') - new Date(a + 'T00:00:00')) / 86400000); }
+function collectRows() {
+  const today = todayISO(), m0 = curMonth(), out = [];
+  for (const id of S.entityOrder) {
+    const e = S.entities[id];
+    if (!e || !['yazam', 'mod'].includes(e.type)) continue;
+    for (const row of e.rows) {
+      const c = calcRow(e.type, row);
+      if (c.paid || !nz(c.total)) continue;
+      const submitted = row.submitted || '';
+      const issued = !!(submitted || String(row.dealNo || '').trim() || String(row.taxInvNo || '').trim());
+      const exp = c.expectedDate || '';
+      const age = submitted ? daysBetween(submitted, today) : null;
+      let status, sk;
+      if (!issued) { status = 'טרם הוגש'; sk = 'draft'; }
+      else if (exp && exp < today) { status = 'באיחור'; sk = 'late'; }
+      else if (exp && exp.slice(0, 7) === m0) { status = 'צפוי החודש'; sk = 'month'; }
+      else if (!exp) { status = 'ללא צפי'; sk = 'noexp'; }
+      else { status = 'צפוי בהמשך'; sk = 'later'; }
+      out.push({
+        tabId: id, rowId: row.id, type: e.type, typeLabel: e.type === 'mod' ? 'משהב״ט' : 'יזם', client: e.client || '—', project: e.name, owner: e.owner || '',
+        month: pad2(row.month) + '/' + row.year, deal: row.dealNo || '', taxInv: row.taxInvNo || '', submitted, exp, age,
+        lateDays: exp && exp < today ? daysBetween(exp, today) : 0, total: r2(c.total), sup: c.supplierOn ? r2(nz(c.supplierPay)) : 0,
+        net: r2(c.total - (c.supplierOn ? nz(c.supplierPay) : 0)), status, sk, old: age !== null && age > 90
+      });
+    }
+  }
+  return out.sort((a, b) => (a.exp || '9999').localeCompare(b.exp || '9999') || a.client.localeCompare(b.client, 'he'));
+}
+/* ספקים שאטלס כבר קיבלה עבורם כסף וטרם שולמו */
+function supplierOwedRows() {
+  const out = [];
+  for (const id of S.entityOrder) {
+    const e = S.entities[id];
+    if (!e || !['yazam', 'mod'].includes(e.type)) continue;
+    for (const row of e.rows) {
+      const c = calcRow(e.type, row);
+      if (c.paid && c.supplierOn && nz(c.supplierPay) && !row.supplierPaid)
+        out.push({ tabId: id, rowId: row.id, typeLabel: e.type === 'mod' ? 'משהב״ט' : 'יזם', client: e.client || '—', project: e.name, month: pad2(row.month) + '/' + row.year, amount: r2(c.supplierPay), date: c.supplierPayDate || c.moneyDate || '' });
+    }
+  }
+  return out.sort((a, b) => String(a.date).localeCompare(String(b.date)));
+}
+const COLLECT_STATUS_CLS = { late: 'no', month: 'fc', later: 'yes', draft: 'fc', noexp: 'fc' };
+/* בדיקות שלמות: שורות פתוחות שחסר בהן נתון שמונע מעקב גבייה */
+function collectChecks() {
+  const out = [];
+  for (const id of S.entityOrder) {
+    const e = S.entities[id];
+    if (!e || !['yazam', 'mod'].includes(e.type)) continue;
+    for (const row of e.rows) {
+      const c = calcRow(e.type, row);
+      if (c.paid) continue;
+      const deal = String(row.dealNo || '').trim(), sub = row.submitted || '';
+      const miss = [];
+      if (!nz(c.total) && (deal || sub)) miss.push('חסר סכום');
+      if (nz(c.total) && !sub) miss.push('חסר תאריך הגשה');
+      if (nz(c.total) && !deal) miss.push('חסר מס׳ ח. עסקה');
+      if (nz(c.total) && sub && !c.expectedDate) miss.push('חסר צפי תשלום (תנאי תשלום)');
+      if (sub && sub > todayISO()) miss.push('תאריך הגשה עתידי – לבדוק');
+      if (miss.length) out.push({ tabId: id, rowId: row.id, typeLabel: e.type === 'mod' ? 'משהב״ט' : 'יזם', client: e.client || '—', project: e.name, month: pad2(row.month) + '/' + row.year, deal, sub, total: r2(c.total), miss });
+    }
+  }
+  return out;
+}
+function collectTodoHTML(rows) {
+  const today = todayISO(), wk = addDays(today, 7);
+  const late = rows.filter(r => r.sk === 'late').sort((a, b) => a.exp.localeCompare(b.exp));
+  const soon = rows.filter(r => r.exp && r.exp >= today && r.exp <= wk).sort((a, b) => a.exp.localeCompare(b.exp));
+  const chk = collectChecks();
+  const U = collectUI();
+  const box = (key, title, cls, items, line) => {
+    const open = U.open[key] !== undefined ? U.open[key] : true;
+    let h = '<div class="todo-box ' + cls + '"><div class="todo-h" data-act="coltodo" data-k="' + key + '" data-open="' + (open ? 1 : 0) + '"><span>' + (open ? '▼' : '◀') + ' ' + title + '</span><span class="todo-n">' + items.length + '</span></div>';
+    if (open) h += items.length ? '<div class="todo-list">' + items.map(line).join('') + '</div>' : '<div class="todo-empty">אין ✓</div>';
+    return h + '</div>';
+  };
+  const go = r => '<button class="btn sm" data-act="colgo" data-tab="' + esc(r.tabId) + '" data-rowid="' + esc(r.rowId) + '">פתח</button>';
+  const invLine = (r, extra) => '<div class="todo-row"><div><b>' + esc(r.project) + '</b> · ' + esc(r.deal || 'ללא מספר') + ' · <span dir="ltr">' + fmtMoney(r.total) + ' ₪</span><div class="muted" style="font-size:12px">' + esc(r.client) + ' · ' + extra + '</div></div>' + go(r) + '</div>';
+  let h = '<div class="todo-grid">';
+  h += box('late', '⏰ חשבוניות באיחור', 'red', late, r => invLine(r, 'צפי ' + fmtDate(r.exp) + ' · <b style="color:var(--red)">' + r.lateDays + ' ימי איחור</b>'));
+  h += box('soon', '📅 לתשלום ב-7 הימים הקרובים', 'gold', soon, r => invLine(r, 'צפי ' + fmtDate(r.exp)));
+  h += box('chk', '⚠ חסר / דורש בדיקה', 'blue', chk, r => '<div class="todo-row"><div><b>' + esc(r.project) + '</b> · ' + esc(r.deal || 'ללא מספר') + (r.total ? ' · <span dir="ltr">' + fmtMoney(r.total) + ' ₪</span>' : '') + '<div class="muted" style="font-size:12px">' + esc(r.client) + ' · חודש ' + esc(r.month) + ' · <b style="color:var(--warn)">' + esc(r.miss.join(' · ')) + '</b></div></div>' + go(r) + '</div>');
+  return h + '</div>';
+}
+function renderCollect(v) {
+  const U = collectUI(), all = collectRows();
+  const q = U.q.trim();
+  const rows = all.filter(r => (!U.type || r.type === U.type) && (!U.client || r.client === U.client) && (!U.owner || r.owner === U.owner) &&
+    (!U.status || (U.status === 'old' ? r.old : r.sk === U.status)) &&
+    (!q || [r.deal, r.taxInv, r.project, r.client, r.owner].some(x => String(x).includes(q))));
+  const sum = (arr, k) => r2(arr.reduce((s, r) => s + nz(r[k]), 0));
+  const late = rows.filter(r => r.sk === 'late'), month = rows.filter(r => r.sk === 'month'), old = rows.filter(r => r.old);
+  const mod = rows.filter(r => r.type === 'mod'), yz = rows.filter(r => r.type === 'yazam');
+  const filtered = !!(U.type || U.client || U.owner || U.status || q);
+  let h = '<div class="crumb">' + backBtnHTML() + '<h2>📋 דשבורד גבייה – חשבוניות שטרם שולמו</h2><span class="meta">נגזר אוטומטית מחוצצי משהב״ט והיזם · "טרם שולם" = אין עדיין ח. מס קבלה / קבלה</span></div>';
+  h += '<div class="stats">' + statHTML('סה״כ פתוח (כולל מע״מ)', fmtMoney(sum(rows, 'total')), 'gold') + statHTML('חשבוניות פתוחות', rows.length) +
+    statHTML('משהב״ט', fmtMoney(sum(mod, 'total')) + ' <span class="muted" style="font-size:12px">(' + mod.length + ')</span>') +
+    statHTML('יזם', fmtMoney(sum(yz, 'total')) + ' <span class="muted" style="font-size:12px">(' + yz.length + ')</span>') +
+    statHTML('נטו לאטלס (אחרי ספקים)', fmtMoney(sum(rows, 'net')), 'green') +
+    statHTML('באיחור', '<span style="color:' + (late.length ? 'var(--red)' : 'inherit') + '">' + fmtMoney(sum(late, 'total')) + ' (' + late.length + ')</span>', 'red') +
+    statHTML('צפוי להיכנס החודש', fmtMoney(sum(month, 'total')) + ' (' + month.length + ')') +
+    statHTML('הוגשו לפני 90+ יום', '<span style="color:' + (old.length ? 'var(--red)' : 'inherit') + '">' + fmtMoney(sum(old, 'total')) + ' (' + old.length + ')</span>', 'red') + '</div>';
+  h += collectTodoHTML(all);
+  // ---- מסננים
+  const opts = (vals, sel, lab) => '<option value="">' + lab + '</option>' + [...new Set(vals)].filter(Boolean).sort((a, b) => a.localeCompare(b, 'he')).map(x => '<option' + (x === sel ? ' selected' : '') + '>' + esc(x) + '</option>').join('');
+  const stOpts = [['', 'כל הסטטוסים'], ['late', 'באיחור'], ['month', 'צפוי החודש'], ['later', 'צפוי בהמשך'], ['old', 'הוגש לפני 90+ יום'], ['draft', 'טרם הוגש'], ['noexp', 'ללא צפי']];
+  h += '<div class="toolbar"><div class="seg">' + [['', 'הכול'], ['mod', 'משהב״ט'], ['yazam', 'יזם']].map(([k, l]) => '<button class="' + (U.type === k ? 'on' : '') + '" data-act="coltype" data-k="' + k + '">' + l + '</button>').join('') + '</div>' +
+    '<select data-col="client">' + opts(all.filter(r => !U.type || r.type === U.type).map(r => r.client), U.client, 'כל הלקוחות') + '</select>' +
+    '<select data-col="owner">' + opts(all.map(r => r.owner), U.owner, 'כל האחראים') + '</select>' +
+    '<select data-col="status">' + stOpts.map(([k, l]) => '<option value="' + k + '"' + (U.status === k ? ' selected' : '') + '>' + l + '</option>').join('') + '</select>' +
+    '<input data-col="q" value="' + esc(U.q) + '" placeholder="חיפוש: מס׳ חשבונית / פרויקט" style="width:190px">' +
+    '<button class="btn" data-act="colclear"' + (filtered ? '' : ' disabled') + '>✖ ניקוי</button><span class="grow"></span><button class="btn" data-act="colxlsx">📗 Excel</button></div>';
+  // ---- ריכוז לפי לקוח + גיול + צפי לפי חודש
+  const byClient = new Map();
+  rows.forEach(r => { const k = r.typeLabel + ' · ' + r.client; if (!byClient.has(k)) byClient.set(k, []); byClient.get(k).push(r); });
+  h += '<div class="coll-grid"><div class="setting-card"><h3>ריכוז לפי לקוח</h3><table class="simple"><tr><th>לקוח</th><th>חשבוניות</th><th>סה״כ פתוח</th><th>לספקים</th><th>נטו לאטלס</th><th>באיחור</th><th>הגשה ותיקה</th></tr>';
+  [...byClient.entries()].sort((a, b) => sum(b[1], 'total') - sum(a[1], 'total')).forEach(([k, rs]) => {
+    const lt = rs.filter(r => r.sk === 'late'), oldest = rs.map(r => r.submitted).filter(Boolean).sort()[0] || '';
+    h += '<tr class="coll-click" data-act="colclient" data-client="' + esc(rs[0].client) + '" data-type="' + rs[0].type + '" title="סינון ללקוח זה"><td><b>' + esc(k) + '</b></td><td class="num">' + rs.length + '</td><td class="num"><b>' + fmtMoney(sum(rs, 'total')) + '</b></td><td class="num">' + fmtMoney(sum(rs, 'sup'), true) + '</td><td class="num">' + fmtMoney(sum(rs, 'net')) + '</td><td class="num"' + (lt.length ? ' style="color:var(--red)"' : '') + '>' + (lt.length ? fmtMoney(sum(lt, 'total')) : '') + '</td><td' + (oldest && daysBetween(oldest, todayISO()) > 90 ? ' style="color:var(--red)"' : '') + '>' + fmtDate(oldest) + '</td></tr>';
+  });
+  h += '<tr class="pt-tot"><td><b>סה״כ</b></td><td class="num">' + rows.length + '</td><td class="num"><b>' + fmtMoney(sum(rows, 'total')) + '</b></td><td class="num">' + fmtMoney(sum(rows, 'sup')) + '</td><td class="num">' + fmtMoney(sum(rows, 'net')) + '</td><td class="num">' + fmtMoney(sum(late, 'total'), true) + '</td><td></td></tr></table></div>';
+  // גיול
+  const buckets = [['0–30 יום', 0, 30], ['31–60', 31, 60], ['61–90', 61, 90], ['91–180', 91, 180], ['180+', 181, 99999]];
+  h += '<div><div class="setting-card"><h3>גיול – ימים מאז ההגשה</h3><table class="simple"><tr><th>ותק</th><th>משהב״ט</th><th>יזם</th><th>סה״כ</th></tr>';
+  buckets.forEach(([l, a, b]) => {
+    const inB = r => r.age !== null && r.age >= a && r.age <= b;
+    const m = mod.filter(inB), y = yz.filter(inB);
+    h += '<tr' + (a > 90 && (m.length || y.length) ? ' style="color:var(--red)"' : '') + '><td>' + l + '</td><td class="num">' + fmtMoney(sum(m, 'total'), true) + '</td><td class="num">' + fmtMoney(sum(y, 'total'), true) + '</td><td class="num"><b>' + fmtMoney(sum(m.concat(y), 'total'), true) + '</b></td></tr>';
+  });
+  h += '</table></div>';
+  // צפי כניסה לפי חודש
+  const byM = new Map();
+  rows.forEach(r => { const k = r.sk === 'late' ? 'באיחור' : r.exp ? r.exp.slice(0, 7) : 'ללא צפי'; byM.set(k, (byM.get(k) || 0) + r.total); });
+  h += '<div class="setting-card"><h3>צפי כניסת כסף</h3><table class="simple"><tr><th>חודש</th><th>סכום צפוי</th></tr>' +
+    [...byM.entries()].sort((a, b) => (a[0] === 'באיחור' ? '0' : a[0]).localeCompare(b[0] === 'באיחור' ? '0' : b[0])).map(([k, s]) => '<tr' + (k === 'באיחור' ? ' style="color:var(--red)"' : '') + '><td>' + (/^\d{4}-\d{2}$/.test(k) ? esc(monthName(k)) : esc(k)) + '</td><td class="num">' + fmtMoney(r2(s)) + '</td></tr>').join('') + '</table></div></div></div>';
+  // ---- פירוט
+  h += '<div class="setting-card"><h3>פירוט חשבוניות (' + rows.length + ')</h3><div class="coll-wrap"><table class="simple coll-tbl"><tr><th>סטטוס</th><th>סוג</th><th>לקוח</th><th>פרויקט</th><th>אחראי</th><th>חודש עבודה</th><th>ח. עסקה</th><th>הוגש</th><th>ימים מההגשה</th><th>צפי תשלום</th><th>סה״כ כולל מע״מ</th><th>לספק</th><th>נטו לאטלס</th></tr>';
+  rows.forEach(r => {
+    h += '<tr class="coll-click" data-act="colgo" data-tab="' + esc(r.tabId) + '" data-rowid="' + esc(r.rowId) + '" title="מעבר לשורה בחוצץ"><td><span class="status ' + COLLECT_STATUS_CLS[r.sk] + '">' + esc(r.status) + (r.lateDays ? ' ' + r.lateDays + ' ימים' : '') + '</span></td>' +
+      '<td>' + r.typeLabel + '</td><td>' + esc(r.client) + '</td><td><b>' + esc(r.project) + '</b></td><td>' + esc(r.owner) + '</td><td>' + esc(r.month) + '</td><td>' + esc(r.deal || '—') + '</td><td>' + fmtDate(r.submitted) + '</td>' +
+      '<td class="num"' + (r.old ? ' style="color:var(--red);font-weight:700"' : '') + '>' + (r.age === null ? '' : r.age) + '</td><td>' + fmtDate(r.exp) + '</td><td class="num"><b>' + fmtMoney(r.total) + '</b></td><td class="num">' + fmtMoney(r.sup, true) + '</td><td class="num">' + fmtMoney(r.net) + '</td></tr>';
+  });
+  if (!rows.length) h += '<tr><td colspan="13" class="muted" style="text-align:center;padding:18px">אין חשבוניות פתוחות' + (filtered ? ' לפי הסינון' : '') + ' ✓</td></tr>';
+  h += '</table></div><div class="hint muted" style="margin-top:6px">לחיצה על שורה פותחת אותה בחוצץ. כשמזינים שם ח. מס קבלה / קבלה – החשבונית יוצאת מהרשימה אוטומטית.</div></div>';
+  // ---- ספקים שממתינים
+  const so = supplierOwedRows().filter(r => !U.type || r.typeLabel === (U.type === 'mod' ? 'משהב״ט' : 'יזם'));
+  if (so.length) {
+    h += '<div class="setting-card"><h3>ספקים לתשלום – הכסף כבר התקבל באטלס (' + so.length + ' · ' + fmtMoney(sum(so, 'amount')) + ')</h3><table class="simple"><tr><th>סוג</th><th>לקוח</th><th>פרויקט / ספק</th><th>חודש</th><th>תאריך יעד</th><th>סכום לספק</th></tr>' +
+      so.map(r => '<tr class="coll-click" data-act="colgo" data-tab="' + esc(r.tabId) + '" data-rowid="' + esc(r.rowId) + '"><td>' + r.typeLabel + '</td><td>' + esc(r.client) + '</td><td><b>' + esc(r.project) + '</b></td><td>' + esc(r.month) + '</td><td>' + fmtDate(r.date) + '</td><td class="num">' + fmtMoney(r.amount) + '</td></tr>').join('') + '</table></div>';
+  }
+  v.innerHTML = h;
+}
+function collectChange(el) {
+  const U = collectUI(), k = el.dataset.col;
+  U[k] = el.value;
+  if (k === 'client' && el.value) { const r = collectRows().find(x => x.client === el.value); if (r && U.type && r.type !== U.type) U.type = ''; }
+  render();
+}
+function collectAction(act, el) {
+  const U = collectUI();
+  switch (act) {
+    case 'coltype': U.type = el.dataset.k; U.client = ''; render(); return true;
+    case 'colclient': U.client = el.dataset.client; U.type = el.dataset.type; render(); return true;
+    case 'colclear': Object.assign(U, { type: '', client: '', owner: '', status: '', q: '' }); render(); return true;
+    case 'colgo': navigate(el.dataset.tab, el.dataset.rowid); return true;
+    case 'coltodo': U.open[el.dataset.k] = el.dataset.open !== '1'; render(); return true;
+    case 'colxlsx': {
+      const rows = collectRows();
+      exportExcel('חשבוניות שטרם שולמו ' + fmtDate(todayISO()), ['סטטוס', 'סוג', 'לקוח', 'פרויקט', 'אחראי', 'חודש עבודה', 'ח. עסקה', 'הוגש', 'ימים מההגשה', 'צפי תשלום', 'סה״כ כולל מע״מ', 'לספק', 'נטו לאטלס'],
+        rows.map(r => [r.status + (r.lateDays ? ' ' + r.lateDays + ' ימים' : ''), r.typeLabel, r.client, r.project, r.owner, r.month, r.deal, fmtDate(r.submitted), r.age === null ? '' : r.age, fmtDate(r.exp), r.total, r.sup, r.net]));
       return true;
     }
   }
