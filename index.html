@@ -658,6 +658,44 @@ table.msum tfoot td{background:var(--gold-soft);font-weight:700}
 .grid .computed.mny.adjusted{background:#eef6ff;border-radius:5px;padding:0 5px}
 .grid .adj-mark{font-size:10px;color:var(--warn);margin-inline-start:3px}
 .grid input.cell.num:not(.mny){color:#3f4757}
+
+/* ---------- מראה אקסל בגיליון הראשי ---------- */
+.grid-wrap.skin-excel{border:1px solid #9aa3b5;border-radius:4px;box-shadow:none}
+.grid-wrap.skin-excel .grid{font-family:Arial,'Segoe UI',sans-serif;font-size:13px}
+.grid-wrap.skin-excel .grid th{background:#1f3864;color:#fff;font-weight:700;padding:6px 8px;border-left:1px solid #3a5285}
+.grid-wrap.skin-excel .grid th .fbtn{color:#c9d3ea}
+.grid-wrap.skin-excel .grid th .fbtn.on{color:#ffd966}
+.grid-wrap.skin-excel .grid td{padding:3px 8px;border-left:1px solid #d4d4d4;border-bottom:1px solid #d4d4d4;line-height:1.35;background:#fff}
+/* קו עבה שמפריד בין העמודות הכספיות לעמודות התיאור – כמו באקסל */
+.grid-wrap.skin-excel .grid td:nth-child(4),.grid-wrap.skin-excel .grid th:nth-child(4){border-left:3px solid #1b1b1b}
+.grid-wrap.skin-excel .grid td:nth-child(7),.grid-wrap.skin-excel .grid th:nth-child(7){border-left:3px solid #1b1b1b}
+.grid-wrap.skin-excel .grid tr[data-ptype] td:first-child{box-shadow:none}
+/* שורות פרויקט/ספק: צבע מלא לכל אדם */
+.grid-wrap.skin-excel .grid tr.xlrow td{background:var(--xc)!important;border-bottom-color:color-mix(in srgb,var(--xc) 70%,#000 12%)}
+.grid-wrap.skin-excel .grid tr.xlrow td:nth-child(5):not(:empty),.grid-wrap.skin-excel .grid tr.xlrow td:nth-child(6):not(:empty){background:color-mix(in srgb,var(--xc) 78%,#000 10%)!important;color:#111!important;font-weight:700!important}
+.grid-wrap.skin-excel .grid tr.xlrow td .muted{color:#3a3a3a}
+.grid-wrap.skin-excel .grid tr.xlrow td a{color:#10254f}
+.grid-wrap.skin-excel .grid tr.xlrow .ptag{background:rgba(255,255,255,.55)!important;color:#1f2a44!important;border:0}
+/* מסגרת לכל צמד (הכנסה + תשלום לספק) – נקרא כבלוק אחד */
+.grid-wrap.skin-excel .grid tr.xl-top td{border-top:2px solid color-mix(in srgb,var(--xc) 45%,#000 45%)}
+.grid-wrap.skin-excel .grid tr.xl-bot td{border-bottom:2px solid color-mix(in srgb,var(--xc) 45%,#000 45%)}
+.grid-wrap.skin-excel .grid tr.pairrow.xl-top:not(.xl-bot) td{border-bottom:1px dashed color-mix(in srgb,var(--xc) 50%,#000 25%)}
+.grid-wrap.skin-excel .grid tr.pairrow td:first-child{border-right:5px solid color-mix(in srgb,var(--xc) 45%,#000 45%)}
+.grid-wrap.skin-excel .grid tr.pairrow td:last-child{border-left:1px solid #d4d4d4}
+.grid-wrap.skin-excel .grid tr.pairrow.pair-hi td{filter:brightness(.93)}
+.grid-wrap.skin-excel .grid tr.pairrow .pair-tag{display:none}
+/* תשלום אטלס לספק: הזחה, כתב נטוי ותא מסמך סגול – כמו בקובץ */
+.grid-wrap.skin-excel .grid tr.xl-pay td:nth-child(9),.grid-wrap.skin-excel .grid tr.xl-pay td:nth-child(10){padding-inline-start:22px}
+.grid-wrap.skin-excel .grid tr.xl-pay td:nth-child(11){color:#3b0f63}
+.grid-wrap.skin-excel .grid tr.xl-pay td:nth-child(6):not(:empty){background:color-mix(in srgb,var(--xc) 60%,#000 18%)!important}
+.grid-wrap.skin-excel .grid tr.xl-pay .chip{background:#7030a0;border-color:#7030a0;color:#ffe699;font-weight:700}
+.grid-wrap.skin-excel .grid tr.xl-pay .chip.zero{background:#c00000;border-color:#c00000;color:#fff}
+.grid-wrap.skin-excel .grid tr.xlrow .chip:not(.zero){background:rgba(255,255,255,.6);border-color:rgba(0,0,0,.18);color:#1f2a44}
+.grid-wrap.skin-excel .grid tr.xl-pay .chip:not(.zero){background:#7030a0;border-color:#7030a0;color:#ffe699}
+.grid-wrap.skin-excel .grid tr.xlrow .status{background:rgba(255,255,255,.6)}
+/* שורות חודש וקבוצות */
+.grid-wrap.skin-excel .grid tr.mrow td{background:#d9e2f3!important;border-top:2px solid #1f3864;border-bottom:1px solid #1f3864;font-size:13.5px}
+.grid-wrap.skin-excel .grid td.auto{font-weight:700}
 </style>
 </head>
 <body>
@@ -1594,7 +1632,23 @@ function buildCashflow() {
   const isOpsE = e => String(e.tabId || '').startsWith('ops:');
   out.sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : (a.dir !== b.dir ? (a.dir === 'in' ? -1 : 1) : (cmp(a.group, b.group) ||
     (isOpsE(a) && isOpsE(b) ? (cmp(a.tabName, b.tabName) || cmp(a.client, b.client)) : (cmp(a.client, b.client) || cmp(a.tabName, b.tabName))))));
-  return out;
+  return pairAdjacent(out);
+}
+/* צמידות: תשלום לספק מוצג מיד מתחת להכנסה לאטלס של אותה שורת מקור, כשהשניים באותו תאריך
+   (כמו בקובץ האקסל). יתרת סוף היום לא משתנה – רק סדר השורות בתוך היום. */
+function pairAdjacent(out) {
+  const res = [], moved = new Set();
+  const payByPair = {};
+  out.forEach(r => { if (r.pair && r.dir === 'out') payByPair[r.pair] = r; });
+  for (const r of out) {
+    if (moved.has(r)) continue;
+    res.push(r);
+    if (r.pair && r.dir === 'in') {
+      const p = payByPair[r.pair];
+      if (p && p.date === r.date && !moved.has(p)) { res.push(p); moved.add(p); }
+    }
+  }
+  return res;
 }
 function cashflowWithBalance(includeForecast) {
   const rows = buildCashflow().filter(r => includeForecast || r.status === 'actual');
@@ -3212,6 +3266,7 @@ function setField(t, rowId, key, raw, type, isOv) {
   if (t.kind === 'bank' && key === 'txType' && raw === '__new') { newBankTypeModal(tp => { row.txType = tp; markDirty(); render(); }); return; }
   if (key === 'offAdd' || key === 'offDed') { if (val !== null) val = Math.abs(val); migrateOffset(row); }
   if ((key === 'supAdd' || key === 'supDed') && val !== null) val = Math.abs(val);
+  const prevBankDate = (t.kind === 'bank' && key === 'date') ? String(row.date || '') : '';
   if (isOv) {
     const c = calcRow(t.kind, row);
     if (val === null || val === '') delete row.ov[key];
@@ -3227,7 +3282,8 @@ function setField(t, rowId, key, raw, type, isOv) {
     const other = key === 'income' ? 'expense' : 'income';
     if (Math.abs(nz(val))) { row[key] = Math.abs(val); row[other] = null; }
   }
-  if (t.kind === 'bank' && key === 'date' && val && !row.forMonth) row.forMonth = val.slice(0, 7);
+  // "עבור איזה חודש" מתעדכן עם התאריך, אלא אם הוזן ידנית חודש שונה מחודש התאריך הקודם
+  if (t.kind === 'bank' && key === 'date' && val && (!row.forMonth || !prevBankDate || row.forMonth === prevBankDate.slice(0, 7))) row.forMonth = val.slice(0, 7);
   if ((t.kind === 'salaries' || t.kind === 'pensions' || t.kind === 'authorities') && key === 'payDate') delete row.payDateAuto;
   if (t.kind === 'authorities' && key === 'payDate' && val) row.status = true;
   if (t.kind === 'authorities' && ['status', 'payDate', 'dueDate', 'amount', 'method', 'authType', 'authName', 'action', 'year', 'month'].includes(key)) setTimeout(() => { authBankSync(row); render(); }, 0);
@@ -3301,6 +3357,7 @@ $('#view').addEventListener('click', e => {
     case 'addrow': {
       const r = newRow(t.kind, t.entity); r.serial = nextSerial(t.rows);
       if (t.kind === 'bank') r.direction = 'out';
+      if (tabSupportsPeriod(t)) fitNewRowToPeriod(t, r);
       t.rows.push(r);
       UI.filters[t.tabId] = {};
       markDirty(); navigate(t.tabId, r.id);
@@ -5694,6 +5751,15 @@ function applyTabPeriod(t, items) {
   if (!b) return items;
   return items.filter(({ row }) => { const d = rowPeriodDate(t.kind, row); return d && d >= b.from && d <= b.to; });
 }
+/* שורה חדשה נכנסת לתקופה שמוצגת כרגע – אחרת היא "נעלמת" מהמסך מיד אחרי ההוספה */
+function fitNewRowToPeriod(t, r) {
+  const b = tabPeriodBounds(tabPeriod(t.tabId));
+  if (!b) return;
+  const today = todayISO();
+  const d = today < b.from ? b.from : today > b.to ? b.to : today;
+  if (t.kind === 'bank') { r.date = d; r.forMonth = d.slice(0, 7); }
+  else if (t.kind === 'freelancer') { r.year = d.slice(0, 4); r.month = d.slice(5, 7); }
+}
 /* טווח השנים שיש בהן נתונים בחוצץ */
 function tabPeriodYears(t) {
   const ys = new Set();
@@ -6659,7 +6725,7 @@ function renderCashflow(v) {
   const missingSup = rows.filter(r => r.docs && r.docs.some(dd => dd.zero)).length;
   let h = '<div class="crumb"><h2>גיליון ראשי – תזרים</h2><span class="meta">נגזר אוטומטית מחוצצי המקור · אין הזנה ידנית בגיליון זה</span><span class="grow"></span>' +
     '<label style="font-size:13px"><input type="checkbox" id="cfForecast"' + (inc ? ' checked' : '') + '> כולל תנועות צפויות</label>' +
-    '<button class="btn sm" data-act="cfskin" title="החלפת מראה הטבלה: מרווח ועדין או צפוף וצבעוני">🎨 מראה: <span class="status ' + (S.settings.cfSkin === 'soft' ? 'yes' : 'fc') + '">' + (S.settings.cfSkin === 'soft' ? 'מרווח' : 'רגיל') + '</span></button></div>';
+    '<button class="btn sm" data-act="cfskin" title="החלפת מראה הטבלה: רגיל → מרווח → אקסל">🎨 מראה: <span class="status ' + (S.settings.cfSkin === 'classic' ? 'fc' : 'yes') + '">' + ({ soft: 'מרווח', excel: 'אקסל' }[S.settings.cfSkin] || 'רגיל') + '</span></button></div>';
   h += periodBarHTML(p);
   const msgs = [];
   if (!all.length) msgs.push(['info', 'הגיליון הראשי ריק. תנועות יופיעו כאן אוטומטית כשיוזנו שורות בחוצצי המקור (פרויקטים, עצמאיים ותפעול).']);
@@ -6678,8 +6744,8 @@ function renderCashflow(v) {
   if (fk.length) h += '<div class="filter-note">🔎 מסנן פעיל – הכנסות/הוצאות לפי השורות המסוננות. יתרות הפתיחה, הסגירה ועמודת היתרה מחושבות על כל התזרים.</div>';
   if (p.mode !== 'month') h += monthSummaryHTML(d);
   if (p.mode !== 'month' && p.summaryOnly) { v.innerHTML = h; bindCfInputs(); return; }
-  const soft = S.settings.cfSkin === 'soft';
-  h += '<div class="grid-wrap' + (soft ? ' skin-soft' : '') + '" data-tab="main"><table class="grid"><thead><tr>' + CF_COLS.map(c => '<th class="' + (c.num ? 'num' : '') + '">' + c.label + ' <button class="fbtn' + (f[c.key] ? ' on' : '') + '" data-act="cffilter" data-key="' + c.key + '">▼</button></th>').join('') + '</tr></thead><tbody>';
+  const soft = S.settings.cfSkin === 'soft', xl = S.settings.cfSkin === 'excel';
+  h += '<div class="grid-wrap' + (soft ? ' skin-soft' : xl ? ' skin-excel' : '') + '" data-tab="main"><table class="grid"><thead><tr>' + CF_COLS.map(c => '<th class="' + (c.num ? 'num' : '') + '">' + c.label + ' <button class="fbtn' + (f[c.key] ? ' on' : '') + '" data-act="cffilter" data-key="' + c.key + '">▼</button></th>').join('') + '</tr></thead><tbody>';
   if (!rows.length) h += '<tr><td colspan="' + CF_COLS.length + '" style="padding:24px;text-align:center" class="muted">אין תנועות</td></tr>';
   const byMonth = [];
   for (const r of rows) { const m = r.date.slice(0, 7); if (!byMonth.length || byMonth[byMonth.length - 1].m !== m) byMonth.push({ m, rs: [] }); byMonth[byMonth.length - 1].rs.push(r); }
@@ -6817,11 +6883,14 @@ function renderCashflow(v) {
         continue;
       }
       const pc = r.pair ? pairColor(r.tabId) : null;
-      h += '<tr' + (r.ptype ? ' data-ptype="' + esc(r.ptype) + '"' : '') + (r.pair ? ' class="pairrow" data-pair="' + esc(r.pair) + '" title="צמד תנועות: הכנסה לאטלס ותשלום לספק באותה שורת מקור · ' + esc(r.tabName) + '"' : '') +
-        ' style="' + (r.status === 'forecast' ? 'opacity:.72;' : '') + (pc ? '--pcb:' + pc.bg + ';--pcl:' + pc.line : '') + '"><td>' + r.n + '</td><td class="num">' + fmtDate(r.date) + '</td><td class="num">' + cfText(r, 'month') + '</td><td>' + (r.dir === 'in' ? '<span style="color:var(--green)">▲ הכנסה</span>' : '<span style="color:var(--red)">▼ הוצאה</span>') + '</td>' +
+      const xc = xl ? xlColor(r) : null;
+      const nx = g.rs[i + 1], pv = g.rs[i - 1];
+      const xcls = !xl ? '' : (r.pair ? (r.dir === 'in' ? (nx && nx.pair === r.pair ? ' xl-top' : ' xl-top xl-bot') : (pv && pv.pair === r.pair ? ' xl-bot xl-pay' : ' xl-top xl-bot xl-pay')) : (xc ? ' xl-top xl-bot' : ''));
+      h += '<tr' + (r.ptype ? ' data-ptype="' + esc(r.ptype) + '"' : '') + ((r.pair || xc) ? ' class="' + (r.pair ? 'pairrow' : '') + (xc ? ' xlrow' : '') + xcls + '"' : '') + (r.pair ? ' data-pair="' + esc(r.pair) + '" title="צמד תנועות: הכנסה לאטלס ותשלום לספק באותה שורת מקור · ' + esc(r.tabName) + '"' : '') +
+        ' style="' + (r.status === 'forecast' ? 'opacity:.72;' : '') + (pc ? '--pcb:' + pc.bg + ';--pcl:' + pc.line + ';' : '') + (xc ? '--xc:' + xc + ';' : '') + '"><td>' + r.n + '</td><td class="num">' + fmtDate(r.date) + '</td><td class="num">' + cfText(r, 'month') + '</td><td>' + (r.dir === 'in' ? '<span style="color:var(--green)">▲ הכנסה</span>' : '<span style="color:var(--red)">▼ הוצאה</span>') + '</td>' +
         '<td class="num" style="color:var(--green);font-weight:600">' + (r.dir === 'in' ? fmtMoney(r.amount) : '') + '</td><td class="num" style="color:var(--red);font-weight:600">' + (r.dir === 'out' ? fmtMoney(r.amount) : '') + '</td>' +
         '<td class="num auto"' + (r.balance < 0 ? ' style="color:var(--red)"' : '') + '><b>' + fmtMoney(r.balance) + '</b></td><td class="h-group">' + (r.ptype === 'yazam' || r.ptype === 'mod' ? '<span class="ptag pt-' + r.ptype + '">' + esc(r.group) + '</span>' : esc(r.group)) + '</td><td class="h-client">' + (r.client ? esc(r.client) : '<span class="muted">—</span>') + '</td>' +
-        '<td class="h-proj"><a href="#" data-act="cfsrc" data-tab="' + r.tabId + '" data-rowid="' + r.rowId + '" title="מעבר לשורה ' + esc(r.serial || '') + ' בחוצץ">' + esc(r.tabName) + '</a>' + (r.serial ? ' <span class="muted">· ' + r.serial + '</span>' : '') + (r.pair ? '<span class="pair-tag" title="צמד הכנסה/ספק"></span>' : '') + '</td><td>' + esc(r.role) + '</td><td class="muted">' + esc(r.desc) + '</td>' +
+        '<td class="h-proj"><a href="#" data-act="cfsrc" data-tab="' + r.tabId + '" data-rowid="' + r.rowId + '" title="מעבר לשורה ' + esc(r.serial || '') + ' בחוצץ">' + esc(r.tabName) + '</a>' + (r.serial ? ' <span class="muted">· ' + r.serial + '</span>' : '') + (r.pair ? '<span class="pair-tag" title="צמד הכנסה/ספק"></span>' : '') + '</td><td>' + (xl && r.pair && r.dir === 'out' ? '<b>אטלס ← ' + esc(r.tabName) + '</b>' : esc(r.role)) + '</td><td class="muted">' + esc(r.desc) + '</td>' +
         '<td>' + (r.docs || []).map(dd => '<span class="chip ' + (dd.zero ? 'zero' : '') + '" data-act="cfdoc" data-tab="' + r.tabId + '" data-rowid="' + r.rowId + '" data-field="' + dd.field + '" title="' + (DOC_LABELS[dd.field] || '') + '">' + esc(DOC_LABELS[dd.field] || '') + ' ' + (dd.zero ? (dd.no === '0' ? '0 חסר' : 'חסר') : esc(dd.no)) + '</span> ').join('') + '</td>' +
         '<td><span class="status ' + (r.status === 'actual' ? 'yes' : 'fc') + '">' + (r.status === 'actual' ? 'בפועל' : 'צפוי') + '</span></td></tr>';
     }
@@ -6858,7 +6927,7 @@ function viewAction(act, el, e) {
   if (alertAction(act, el, e)) return;
   switch (act) {
     case 'cfrebuild': render(); toast('התזרים נבנה מחדש מחוצצי המקור. נתוני המקור לא שונו.', 'ok'); break;
-    case 'cfskin': S.settings.cfSkin = S.settings.cfSkin === 'soft' ? 'classic' : 'soft'; markDirty(); render(); break;
+    case 'cfskin': S.settings.cfSkin = { classic: 'soft', soft: 'excel', excel: 'classic' }[S.settings.cfSkin] || 'soft'; markDirty(); render(); break;
     case 'cfclear': UI.filters.main = {}; render(); break;
     case 'cfsaltoggle': { UI.cfSalOpen = UI.cfSalOpen || {}; UI.cfSalOpen[el.dataset.k] = !UI.cfSalOpen[el.dataset.k]; render(); break; }
     case 'ccauthmatch': e.preventDefault && e.preventDefault(); ccAuthMatchModal(false); break;
@@ -6951,6 +7020,25 @@ const PAIR_COLORS = [
   { bg: '#f3f2e2', line: '#867f2c' }, { bg: '#eeeefb', line: '#4b4bb5' }, { bg: '#fbeef7', line: '#a63b86' },
   { bg: '#eef3ea', line: '#5b7a3a' }
 ];
+/* מראה אקסל: צבע קבוע לכל אדם/ספק (לפי האחראי בחוצץ) – כמו בקובץ התזרים באקסל */
+const XL_COLORS = ['#c9c9ff', '#92cddc', '#ebf1de', '#e6b8b7', '#ccffff', '#ddd9c4', '#a9f08a', '#dce6f1', '#ffff99', '#fcd5b4', '#d8e4bc', '#e4dfec', '#b7dee8', '#f2dcdb', '#c4d79b', '#ffe699', '#d9d9d9', '#b4c6e7'];
+let XL_MAP = null, XL_MAP_SIG = '';
+function xlColorKey(tabId) {
+  const e = S.entities[tabId];
+  if (!e) return '';
+  if (e.type === 'freelancer') return String(e.name || '').split(' ')[0];
+  return String(e.owner || e.name || '').trim();
+}
+function xlColor(r) {
+  const e = S.entities[r.tabId];
+  if (!e || !(PROJECT_TYPES.includes(e.type) || e.type === 'freelancer')) return null;
+  const sig = S.entityOrder.join('|');
+  if (!XL_MAP || XL_MAP_SIG !== sig) {
+    XL_MAP = {}; XL_MAP_SIG = sig; let k = 0;
+    for (const id of S.entityOrder) { const key = xlColorKey(id); if (key && !(key in XL_MAP)) XL_MAP[key] = XL_COLORS[k++ % XL_COLORS.length]; }
+  }
+  return XL_MAP[xlColorKey(r.tabId)] || null;
+}
 function pairColor(tabId) {
   let i = S.entityOrder.indexOf(tabId);
   if (i < 0) { i = 0; for (const ch of String(tabId)) i = (i * 31 + ch.charCodeAt(0)) % 997; }
