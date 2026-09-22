@@ -731,6 +731,12 @@ table.coll-tbl td,table.coll-tbl th{white-space:nowrap}
 .ord-tbl tr.ord-exp td{opacity:.6}
 .ord-bar{height:4px;border-radius:2px;background:#e6e6ee;margin-top:3px;overflow:hidden;min-width:70px}
 .ord-bar div{height:100%}
+.stat.stat-today{border:3px solid var(--red)!important;border-top:3px solid var(--red)!important;box-shadow:0 0 0 3px rgba(200,30,30,.12);background:#fff5f5}
+.stat.stat-today .l{color:var(--red);font-weight:700}
+.stat.stat-today .v{font-size:20px}
+.stat.stat-dep{border-top-color:#2f6fc4;cursor:pointer}
+.grid td.cf-today{outline:3px solid var(--red);outline-offset:-3px;background:#fff5f5!important;color:#b00000!important;font-weight:800}
+.grid tr.cf-today-row td.cf-today b{color:#b00000}
 </style>
 </head>
 <body>
@@ -6891,8 +6897,12 @@ function renderCashflow(v) {
   const an = pendingAnomalyCount(); if (an) msgs.push(['warn', an + ' אנומליות ממתינות לבירור – <a href="#" data-nav-an="1">לרשימה</a>']);
   if (msgs.length) h += '<div style="display:flex;flex-direction:column;gap:6px;margin-bottom:10px">' + msgs.map(x => '<div class="msg ' + x[0] + '">' + x[1] + '</div>').join('') + '</div>';
   h += '<div class="toolbar"><button class="btn primary" data-act="cfrebuild">🔄 בנייה מחדש של התזרים</button><button class="btn" data-act="cfxlsx">📗 Excel</button><button class="btn" data-act="cfpdf">📕 PDF</button><button class="btn" data-act="cfclear"' + (Object.values(f).some(Boolean) ? '' : ' disabled') + '>✖ ניקוי מסננים</button></div>';
-  h += '<div class="stats">' + statHTML(p.mode === 'all' ? 'יתרת פתיחה' : 'יתרת פתיחה לתקופה', fmtMoney(d.opening)) + statHTML('הכנסות', fmtMoney(income), 'green') + statHTML('הוצאות', fmtMoney(expense), 'red') +
-    statHTML('נטו', fmtMoney(r2(income - expense)), 'gold') + statHTML(p.mode === 'all' ? 'יתרת סגירה' : 'יתרת סגירה לתקופה', '<span' + (d.closing < 0 ? ' style="color:var(--red)"' : '') + '>' + fmtMoney(d.closing) + '</span>') + statHTML('יתרה בפועל היום', fmtMoney(actualBalanceToday())) + statHTML('תנועות', rows.length) + '</div>';
+  const balToday = actualBalanceToday(), depNow = depBalance();
+  h += '<div class="stats">' + statHTML('הכנסות', fmtMoney(income), 'green') + statHTML('הוצאות', fmtMoney(expense), 'red') +
+    statHTML('נטו', fmtMoney(r2(income - expense)), 'gold') + statHTML(p.mode === 'all' ? 'יתרת סגירה' : 'יתרת סגירה לתקופה', '<span' + (d.closing < 0 ? ' style="color:var(--red)"' : '') + '>' + fmtMoney(d.closing) + '</span>') +
+    '<div class="stat stat-today"><div class="l">יתרה בפועל היום · עו״ש</div><div class="v"' + (balToday < 0 ? ' style="color:var(--red)"' : '') + '>' + fmtMoney(balToday) + '</div></div>' +
+    '<div class="stat stat-dep" data-act="cfdep" title="מעבר לחוצץ הבנק – ניהול הפיקדון"><div class="l">פיקדון</div><div class="v">' + fmtMoney(depNow) + '</div></div>' +
+    statHTML('סה״כ בבנק (עו״ש + פיקדון)', fmtMoney(r2(balToday + depNow))) + '</div>';
   const fk = Object.keys(f).filter(k => f[k]);
   if (fk.length) h += '<div class="filter-note">🔎 מסנן פעיל – הכנסות/הוצאות לפי השורות המסוננות. יתרות הפתיחה, הסגירה ועמודת היתרה מחושבות על כל התזרים.</div>';
   if (p.mode !== 'month') h += monthSummaryHTML(d);
@@ -7050,7 +7060,24 @@ function renderCashflow(v) {
   }
   h += '</tbody></table></div>';
   v.innerHTML = h;
+  cfMarkToday(v);
   bindCfInputs();
+}
+/* מסגרת אדומה על תא היתרה של התנועה האחרונה בפועל (עד היום) – "כמה כסף יש עכשיו בחשבון" */
+function cfMarkToday(v) {
+  const tb = $('.grid-wrap[data-tab="main"] tbody', v); if (!tb) return;
+  const trs = [...tb.children];
+  const split = trs.findIndex(tr => tr.classList.contains('cfsplit'));
+  const end = split >= 0 ? split : trs.length;
+  for (let i = end - 1; i >= 0; i--) {
+    const tr = trs[i];
+    if (tr.classList.contains('mrow') || tr.classList.contains('cfsplit')) continue;
+    const td = tr.querySelector('td.auto');
+    if (!td || td.textContent.trim() === '—' || !td.textContent.trim()) continue;
+    td.classList.add('cf-today'); td.title = 'היתרה בפועל נכון להיום';
+    tr.classList.add('cf-today-row');
+    break;
+  }
 }
 function bindCfInputs() {
   const p = cfPeriod();
@@ -7681,6 +7708,7 @@ function viewAction(act, el, e) {
   if (alertAction(act, el, e)) return;
   switch (act) {
     case 'cfrebuild': render(); toast('התזרים נבנה מחדש מחוצצי המקור. נתוני המקור לא שונו.', 'ok'); break;
+    case 'cfdep': UI.depOpen = true; navigate('ops:bank'); break;
     case 'cfskin': S.settings.cfSkin = { classic: 'soft', soft: 'excel', excel: 'classic' }[S.settings.cfSkin] || 'soft'; markDirty(); render(); break;
     case 'cfclear': UI.filters.main = {}; render(); break;
     case 'cfsaltoggle': { UI.cfSalOpen = UI.cfSalOpen || {}; UI.cfSalOpen[el.dataset.k] = !UI.cfSalOpen[el.dataset.k]; render(); break; }
