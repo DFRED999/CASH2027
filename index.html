@@ -888,6 +888,8 @@ function defaultState() {
       orderAlertDays: 30,
       // מראה הטבלה בגיליון הראשי: 'classic' (צפוף וצבעוני) או 'soft' (מרווח ועדין)
       cfSkin: 'classic',
+      // איך מחושבת "היתרה בפועל היום": 'date' = לפי תאריך התנועה · 'flag' = רק מה שסומן בפועל
+      balanceMode: 'date',
       bankFee: { startMonth: '', history: [{ from: '0000-00', amount: 26 }], generated: {} },
       bankTxTypes: BANK_TX_TYPES.slice(),
       // קבוצות שמות של אותו אדם (השם הראשון הוא השם הראשי)
@@ -1702,6 +1704,18 @@ function cashflowWithBalance(includeForecast) {
   rows.forEach((r, i) => { bal = r2(bal + (r.dir === 'in' ? r.amount : -r.amount)); r.balance = bal; r.n = i + 1; });
   return rows;
 }
+/* היתרה שאמורה להיות בחשבון היום.
+   'date'  – כל תנועה שתאריכה כבר עבר נספרת, גם אם עדיין לא סומנה (ברירת מחדל):
+             תשלום לספק שיצא אך טרם התקבלה עליו חשבונית, או תקבול שטרם נרשמה עליו קבלה.
+   'flag'  – רק תנועות שסומנו בפועל. */
+function balanceMode() { return S.settings.balanceMode === 'flag' ? 'flag' : 'date'; }
+function balanceToday() {
+  if (balanceMode() === 'flag') return actualBalanceToday();
+  const t = todayISO();
+  return buildCashflow().filter(r => r.date <= t).reduce((b, r) => r2(b + (r.dir === 'in' ? r.amount : -r.amount)), nz(S.settings.openingBalance));
+}
+/* תנועות שתאריכן עבר וטרם סומנו – הפער בין שתי השיטות */
+function pendingPastRows() { const t = todayISO(); return buildCashflow().filter(r => r.date <= t && r.status === 'forecast'); }
 function actualBalanceToday() {
   const t = todayISO();
   return buildCashflow().filter(r => r.status === 'actual' && r.date <= t).reduce((b, r) => r2(b + (r.dir === 'in' ? r.amount : -r.amount)), nz(S.settings.openingBalance));
@@ -2545,7 +2559,7 @@ function mobileStats() {
 }
 function renderTopStats() {
   $('#tbToday').textContent = fmtDate(todayISO());
-  const b = actualBalanceToday();
+  const b = balanceToday();
   const el = $('#tbBalance'); el.textContent = fmtMoney(b); el.style.color = b < 0 ? '#ff9a9a' : '';
   const n = pendingAnomalyCount();
   const badge = $('#anBadge'); badge.textContent = n; badge.classList.toggle('hidden', !n);
@@ -6691,7 +6705,7 @@ function buildAlerts() {
     add({ key: 'cash|neg', sev: d <= 30 ? 'err' : 'warn', cat: 'cash', date: neg.date, amount: Math.abs(neg.balance),
       title: 'היתרה הצפויה יורדת מתחת לאפס ב-' + fmtDate(neg.date), detail: 'יתרה צפויה ' + fmtMoney(neg.balance) + ' ₪ · בעוד ' + d + ' ימים · לפי ' + neg.tabName + ' – ' + neg.role, tabId: 'main' });
   }
-  const bal = actualBalanceToday();
+  const bal = balanceToday();
   if (bal < 0) add({ key: 'cash|negnow', sev: 'err', cat: 'cash', date: today, amount: Math.abs(bal),
     title: 'יתרת העו״ש בפועל שלילית', detail: 'יתרה נוכחית ' + fmtMoney(bal) + ' ₪', tabId: 'main' });
   const in30 = cf.filter(r => r.date >= today && r.date <= addDays(today, 30));
@@ -6902,7 +6916,7 @@ function renderCashflow(v) {
   const an = pendingAnomalyCount(); if (an) msgs.push(['warn', an + ' אנומליות ממתינות לבירור – <a href="#" data-nav-an="1">לרשימה</a>']);
   if (msgs.length) h += '<div style="display:flex;flex-direction:column;gap:6px;margin-bottom:10px">' + msgs.map(x => '<div class="msg ' + x[0] + '">' + x[1] + '</div>').join('') + '</div>';
   h += '<div class="toolbar"><button class="btn primary" data-act="cfrebuild">🔄 בנייה מחדש של התזרים</button><button class="btn" data-act="cfxlsx">📗 Excel</button><button class="btn" data-act="cfpdf">📕 PDF</button><button class="btn" data-act="cfclear"' + (Object.values(f).some(Boolean) ? '' : ' disabled') + '>✖ ניקוי מסננים</button></div>';
-  const balToday = actualBalanceToday(), depNow = depBalance();
+  const balToday = balanceToday(), depNow = depBalance();
   h += '<div class="stats">' + statHTML('הכנסות', fmtMoney(income), 'green') + statHTML('הוצאות', fmtMoney(expense), 'red') +
     statHTML('נטו', fmtMoney(r2(income - expense)), 'gold') + statHTML(p.mode === 'all' ? 'יתרת סגירה' : 'יתרת סגירה לתקופה', '<span' + (d.closing < 0 ? ' style="color:var(--red)"' : '') + '>' + fmtMoney(d.closing) + '</span>') +
     '<div class="stat stat-today"><div class="l">יתרה בפועל היום · עו״ש</div><div class="v"' + (balToday < 0 ? ' style="color:var(--red)"' : '') + '>' + fmtMoney(balToday) + '</div></div>' +
@@ -7079,15 +7093,15 @@ function cfMarkToday(v) {
   if (!tr) return;
   const td = tr.querySelector('td.auto');
   const run = td ? num(td.textContent) : null;
-  const actual = actualBalanceToday();
-  const over = cashflowWithBalance(true).filter(r => r.date <= today && r.status === 'forecast');
+  const actual = balanceToday();
+  const over = pendingPastRows();
   const gap = run === null ? 0 : r2(run - actual);
   if (td && Math.abs(gap) < 0.01) { td.classList.add('cf-today'); td.title = 'היתרה בפועל נכון להיום'; tr.classList.add('cf-today-row'); }
   const bar = document.createElement('tr');
   bar.className = 'cf-today-bar';
   bar.innerHTML = '<td colspan="' + tr.children.length + '"><div class="cfb"><span class="lbl">● יתרה בפועל היום (' + fmtDate(today) + ')</span>' +
     '<b dir="ltr">' + fmtMoney(actual) + ' ₪</b>' +
-    (Math.abs(gap) >= 0.01 ? '<span class="gapinfo">היתרה בעמודה כוללת גם ' + over.length + ' תנועות צפויות שהתאריך שלהן כבר עבר (' + fmtMoney(gap) + ' ₪) – <a href="#" data-act="cfoverdue">להצגתן</a></span>' : '') +
+    (over.length ? '<span class="gapinfo">כולל ' + over.length + ' תנועות שהתאריך שלהן עבר וטרם סומנו/התקבל עליהן מסמך' + (Math.abs(gap) >= 0.01 ? ' · הפרש ' + fmtMoney(gap) + ' ₪ מהיתרה בעמודה' : '') + ' – <a href="#" data-act="cfoverdue">להצגתן</a></span>' : '') +
     '</div></td>';
   tr.after(bar);
 }
@@ -7325,7 +7339,7 @@ function renderPartners(v) {
       : '<p class="pt-line" style="color:var(--green)"><b>אתם מאוזנים.</b> כל משיכה נוספת – לפי אחוזי השותפות.</p>') + '</div>';
   }
   // ---- מחשבון משיכה
-  const bal = actualBalanceToday(), avail = r2(bal - nz(P.reserve));
+  const bal = balanceToday(), avail = r2(bal - nz(P.reserve));
   const drawAmt = U.draw === '' ? '' : nz(U.draw);
   h += '<div class="setting-card"><h3>💸 תכנון המשיכה הבאה</h3><div class="kv" style="margin-bottom:8px"><div>יתרה בבנק היום</div><div dir="ltr" style="text-align:right">' + fmtMoney(bal) + '</div><div>רזרבה שנשארת בחברה</div><div dir="ltr" style="text-align:right">' + fmtMoney(P.reserve) + '</div><div><b>זמין לחלוקה</b></div><div dir="ltr" style="text-align:right"><b>' + fmtMoney(avail) + '</b></div></div>' +
     '<div class="toolbar"><label>סכום שרוצים למשוך עכשיו (שני השותפים יחד) <input id="ptDraw" value="' + esc(drawAmt === '' ? '' : fmtMoney(drawAmt)) + '" placeholder="למשל 60,000" style="direction:ltr;width:140px"></label>' +
@@ -7448,7 +7462,7 @@ function partnersAction(act, el) {
   switch (act) {
     case 'pttoggle': U.open[el.dataset.p] = !U.open[el.dataset.p]; render(); return true;
     case 'ptdrawgap': { const res = partnersCalc(U.year); U.draw = r2(res.partners.reduce((s, x) => s + x.need, 0)); render(); return true; }
-    case 'ptdrawavail': U.draw = Math.max(0, r2(actualBalanceToday() - nz(P.reserve))); render(); return true;
+    case 'ptdrawavail': U.draw = Math.max(0, r2(balanceToday() - nz(P.reserve))); render(); return true;
     case 'ptaddman': P.manual.push({ id: uid('mn'), partner: P.list[0] ? P.list[0].id : '', date: (U.year === curMonth().slice(0, 4) ? todayISO() : U.year + '-01-01'), dir: 'out', desc: '', amount: 0 }); markDirty(); render(); return true;
     case 'ptdelman': P.manual = P.manual.filter(m => m.id !== el.dataset.id); markDirty(); render(); return true;
     case 'ptclearf': { U.filters = U.filters || {}; U.filters[el.dataset.p] = {}; render(); return true; }
@@ -7922,7 +7936,7 @@ function depBalance(upto) {
 }
 const DEP_KIND_LABEL = { in: 'העברה לפיקדון', out: 'משיכה מפיקדון', interest: 'ריבית / רווח', set: 'עדכון יתרה' };
 function bankDepositHTML() {
-  const bal = depBalance(), cash = actualBalanceToday(), open = UI.depOpen;
+  const bal = depBalance(), cash = balanceToday(), open = UI.depOpen;
   let h = '<div class="dep-card"><div class="dep-stats">' +
     '<div class="dep-stat"><div class="l">יתרת עו״ש נכון להיום</div><div class="v' + (cash < 0 ? ' neg' : '') + '">' + fmtMoney(cash) + ' ₪</div><small>יתרת פתיחה + כל התנועות בתזרים עד היום</small></div>' +
     '<div class="dep-stat dep"><div class="l">יתרת פיקדון</div><div class="v">' + fmtMoney(bal) + ' ₪</div><small>מנוהל בנפרד מהעו״ש</small></div>' +
@@ -8042,6 +8056,7 @@ function renderSettings(v) {
 
     '<div class="form-row"><label>התראה לפני סיום תוקף הזמנה (ימים)</label><input data-set="orderAlertDays" data-kind="num" value="' + esc(st.orderAlertDays === undefined ? 30 : st.orderAlertDays) + '" style="direction:ltr"><div class="hint">ברירת מחדל לכל הזמנות העבודה. בכל הזמנה בנפרד אפשר לקבוע מספר ימים אחר דרך ״📄 הזמנות״ בחוצץ הפרויקט.</div></div>' +
     '<div class="form-row"><label>ברירת מחדל בתזרים</label><select data-set="includeForecast" data-kind="bool"><option value="1"' + (st.includeForecast ? ' selected' : '') + '>כולל תנועות צפויות</option><option value="0"' + (!st.includeForecast ? ' selected' : '') + '>בפועל בלבד</option></select></div>' +
+    '<div class="form-row"><label>חישוב "היתרה בפועל היום"</label><select data-set="balanceMode"><option value="date"' + (S.settings.balanceMode !== 'flag' ? ' selected' : '') + '>לפי תאריך התנועה – כל מה שתאריכו עבר נספר</option><option value="flag"' + (S.settings.balanceMode === 'flag' ? ' selected' : '') + '>רק תנועות שסומנו בפועל (קבלה / סימון תשלום לספק)</option></select><div class="hint">בברירת המחדל תשלום לספק שכבר יצא נספר גם אם טרם התקבלה חשבונית, וכך היתרה משקפת את חשבון הבנק.</div></div>' +
     '<div class="form-row"><label>שמירה אוטומטית</label><select data-set="autosave" data-kind="bool"><option value="1"' + (st.autosave ? ' selected' : '') + '>פעילה (שנייה לאחר כל שינוי)</option><option value="0"' + (!st.autosave ? ' selected' : '') + '>כבויה – שמירה בכפתור בלבד</option></select></div>' +
     '</div><div class="hint muted">כלל תאריך קבלת הכסף (אוטומטי): נקבע רק לאחר הזנת ח. מס קבלה או קבלה, ושווה לתאריך הצפי (הוגש + ימי צפי). ניתן לדריסה ידנית בכל שורה.</div></div>';
 
