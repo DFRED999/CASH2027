@@ -1796,16 +1796,20 @@ function filterText(t, col, row, c) { const s = cellText(t, col, row, c); return
 
 /* ---- filters ---- */
 function tabFilters(tabId) { return UI.filters[tabId] || (UI.filters[tabId] = {}); }
-function applyFilters(t) {
+/* מסנני העמודות (הכפתור ▼ בכותרת) – חלים בכל החוצצים, גם באלה שיש להם סינון משלהם
+   (משכורות, פנסיות, אשראי, רשויות) */
+function applyColFilters(t, items) {
   const f = tabFilters(t.tabId);
   const keys = Object.keys(f).filter(k => f[k]);
-  // חיתוך לתקופה הנבחרת (בנק / עצמאים) לפני המסננים – חל גם על הסיכומים והייצוא
-  const items = applyTabPeriod(t, t.rows.map(row => ({ row, c: calcRow(t.kind, row) })));
   if (!keys.length) return items;
   return items.filter(({ row, c }) => keys.every(k => {
     const col = t.cols.find(x => x.key === k);
     return !col || f[k].includes(filterText(t, col, row, c));
   }));
+}
+function applyFilters(t) {
+  // חיתוך לתקופה הנבחרת (בנק / עצמאים) לפני המסננים – חל גם על הסיכומים והייצוא
+  return applyColFilters(t, applyTabPeriod(t, t.rows.map(row => ({ row, c: calcRow(t.kind, row) }))));
 }
 function openFilterPopup(btn, getValues, current, onApply) {
   closePopups();
@@ -3782,7 +3786,7 @@ function payslipBtn(t, row) {
 function salMonthHTML(t, st) {
   const ym = st.month;
   const rows = t.rows.filter(r => rowMonth(r) === ym).sort((a, b) => employeeName(a.employeeId).localeCompare(employeeName(b.employeeId), 'he'));
-  const items = rows.map(row => ({ row, c: calcRow('salaries', row) }));
+  const items = applyColFilters(t, rows.map(row => ({ row, c: calcRow('salaries', row) })));
   const lastMonth = t.rows.map(rowMonth).filter(Boolean).sort().pop() || '';
   const sum = f => r2(items.reduce((a, x) => a + nz(f(x)), 0));
   let h = '<div class="scards">' +
@@ -3808,7 +3812,7 @@ function salEmployeeHTML(t, st) {
   if (!S.employees.length) return '<div class="empty-state"><b>אין עדיין עובדים</b>הוסף עובד חדש או גרור PDF של תלושים – העובדים ייווצרו מתוך התלושים.<div style="margin-top:10px"><button class="btn gold" data-act="saladdemp">＋ הוסף עובד חדש</button></div></div>';
   const emp = empById(st.emp);
   const rows = salRowsOf(emp.id);
-  const items = rows.map(row => ({ row, c: calcRow('salaries', row) }));
+  const items = applyColFilters(t, rows.map(row => ({ row, c: calcRow('salaries', row) })));
   const last = items[0];
   const sum = f => r2(items.reduce((a, x) => a + nz(f(x)), 0));
   let h = '<div class="scards emp-cards"><div class="scard emp-pick"><div class="avatar">' + esc((emp.name || '?').trim().charAt(0)) + '</div><div class="emp-meta"><select class="emp-select" id="salEmpSel">' +
@@ -4159,7 +4163,7 @@ function renderPensions(v, t) {
 function penMonthHTML(t, st) {
   const ym = st.month;
   const rows = t.rows.filter(r => rowMonth(r) === ym).sort((a, b) => employeeName(a.employeeId).localeCompare(employeeName(b.employeeId), 'he') || String(a.fundName || '').localeCompare(String(b.fundName || ''), 'he'));
-  const items = rows.map(row => ({ row, c: calcRow('pensions', row) }));
+  const items = applyColFilters(t, rows.map(row => ({ row, c: calcRow('pensions', row) })));
   const sum = f => r2(items.reduce((a, x) => a + nz(f(x)), 0));
   const lastMonth = t.rows.map(rowMonth).filter(Boolean).sort().pop() || '';
   const funds = {};
@@ -4197,7 +4201,7 @@ function penEmployeeHTML(t, st) {
   if (!S.employees.length) return '<div class="empty-state"><b>אין עדיין עובדים</b>הוסף עובד חדש או גרור דוח הפקדות – העובדים ייווצרו מתוך הדוח.<div style="margin-top:10px"><button class="btn gold" data-act="penaddemp">＋ הוסף עובד חדש</button></div></div>';
   const emp = empById(st.emp);
   const rows = t.rows.filter(r => r.employeeId === emp.id).sort((a, b) => rowMonth(b).localeCompare(rowMonth(a)) || String(a.fundName || '').localeCompare(String(b.fundName || ''), 'he'));
-  const items = rows.map(row => ({ row, c: calcRow('pensions', row) }));
+  const items = applyColFilters(t, rows.map(row => ({ row, c: calcRow('pensions', row) })));
   const sum = f => r2(items.reduce((a, x) => a + nz(f(x)), 0));
   const last = items[0] ? rowMonth(items[0].row) : '';
   const lastItems = items.filter(x => rowMonth(x.row) === last);
@@ -4461,7 +4465,7 @@ function ccGroupKey(row) { return (row.chargeDate || row.txDate || '') + '|' + (
 function ccFilter(t) {
   const st = ccState();
   const q = (st.q || '').trim().toLowerCase();
-  return t.rows.map(row => ({ row, c: calcRow('credit', row) })).filter(({ row, c }) => {
+  return applyColFilters(t, t.rows.map(row => ({ row, c: calcRow('credit', row) })).filter(({ row, c }) => {
     const m = ccRowMonth(row);
     if (st.tab === 'month' && m !== st.month) return false;
     if (st.tab === 'year' && m.slice(0, 4) !== st.year) return false;
@@ -4473,7 +4477,7 @@ function ccFilter(t) {
     }
     return true;
   }).sort((a, b) => String(b.row.chargeDate || b.row.txDate || '').localeCompare(String(a.row.chargeDate || a.row.txDate || '')) ||
-    String(b.row.txDate || '').localeCompare(String(a.row.txDate || '')) || nz(b.row.serial) - nz(a.row.serial));
+    String(b.row.txDate || '').localeCompare(String(a.row.txDate || '')) || nz(b.row.serial) - nz(a.row.serial)));
 }
 
 /* ---------- תצוגה ---------- */
@@ -5213,6 +5217,7 @@ function authFilter(t) {
     if (st.who && authWho(row) !== st.who) return false;
     return true;
   });
+  items = applyColFilters(t, items);
   const k = st.sort.key, dir = st.sort.dir === 'desc' ? -1 : 1;
   const col = t.cols.find(x => x.key === k);
   items.sort((a, b) => {
