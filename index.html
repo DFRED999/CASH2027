@@ -742,6 +742,13 @@ table.coll-tbl td,table.coll-tbl th{white-space:nowrap}
 .grid tr.cf-today-bar .lbl{color:var(--red);font-weight:800}
 .grid tr.cf-today-bar b{font-size:16px;color:#b00000}
 .grid tr.cf-today-bar .gapinfo{color:#7a5c00;background:#fff3cd;border:1px solid #f3d49b;border-radius:6px;padding:2px 8px;font-size:12px}
+.pt-det{font-size:12px}
+.pt-det th,.pt-det td{padding:2px 5px;white-space:nowrap}
+.pt-det th{font-size:11.5px;line-height:1.15}
+.pt-det td:nth-child(4){max-width:230px;overflow:hidden;text-overflow:ellipsis}
+.pt-det td.pt-chk{text-align:center}
+.pt-det tr.pt-skip td{opacity:.5;text-decoration:line-through}
+.pt-det tr.pt-skip td.pt-chk{opacity:1;text-decoration:none}
 </style>
 </head>
 <body>
@@ -7153,6 +7160,7 @@ function partnersState() {
   if (P.reserve === undefined) P.reserve = 0;
   if (!P.bankRows || typeof P.bankRows !== 'object') P.bankRows = {};
   if (!Array.isArray(P.manual)) P.manual = [];
+  if (!P.rowSkip || typeof P.rowSkip !== 'object') P.rowSkip = {};
   if (P.loanInclude === undefined) P.loanInclude = true;
   if (!P.txTypesAdded) {
     const tt = st.bankTxTypes || (st.bankTxTypes = []);
@@ -7263,7 +7271,12 @@ function partnersCalc(year) {
         items.push(Object.assign(it, { kindLabel: 'משויך · ' + (a.kind === 'emp' ? empName(a.ref) : freeName(a.ref)), alloc: a, allocKey: key, pct }));
       });
     }
-    items.forEach(it => it.counted = r2(it.cost * it.pct / 100));
+    items.forEach(it => {
+      it.key = it.allocKey || it.passKey || it.bankKey || (it.src + '|' + it.rowId);
+      if (P.rowSkip[it.key]) it.pct = 0;
+      it.skipped = !!P.rowSkip[it.key];
+      it.counted = r2(it.cost * it.pct / 100);
+    });
     items.sort((a, b) => String(a.date).localeCompare(String(b.date)));
     const carry = nz((P.carry[year] || {})[p.id]);
     const taken = r2(items.reduce((s, it) => s + it.counted, 0) + carry);
@@ -7389,17 +7402,21 @@ function renderPartners(v) {
       const shownSum = r2(shown.reduce((s, it) => s + it.counted, 0));
       h += '<div class="toolbar">' + sel('kind', kinds, 'כל הסוגים') + sel('month', months, 'כל החודשים') +
         ((f.kind || f.month) ? '<button class="btn sm" data-act="ptclearf" data-p="' + x.p.id + '">✖ ניקוי סינון</button><span class="muted">מוצגות ' + shown.length + ' מתוך ' + x.items.length + ' · סה״כ מסונן <b dir="ltr">' + fmtMoney(shownSum) + '</b></span>' : '') + '</div>';
-      h += '<table class="simple"><tr><th>תאריך תשלום</th><th>עבור חודש</th><th>סוג</th><th>פירוט</th><th>ברוטו / לפני מע״מ</th><th>הפרשות מעסיק</th><th>עלות לחברה</th><th>% נזקף</th><th>נספר</th></tr>';
+      h += '<table class="simple pt-det"><tr><th>תאריך</th><th>חודש</th><th>סוג</th><th>פירוט</th><th>ברוטו /<br>לפני מע״מ</th><th>הפרשות<br>מעסיק</th><th>עלות<br>לחברה</th><th>%</th><th title="הסרת סימון = השורה לא נספרת בסה״כ של השותף">נספר?</th><th>נספר<br>בסה״כ</th><th></th></tr>';
       shown.forEach(it => {
-        let pctCell = '100%';
-        if (it.alloc) pctCell = '<input data-pt="rowpct" data-key="' + esc(it.allocKey) + '" value="' + esc(it.pct) + '" style="width:54px;direction:ltr;background:#fff2cc">%';
-        else if (it.pass) pctCell = '<label><input type="checkbox" data-pt="pass" data-key="' + esc(it.passKey) + '"' + (it.pct ? ' checked' : '') + '> לספור</label>';
-        else if (it.bankKey) pctCell = '<label><input type="checkbox" data-pt="bankrow" data-key="' + esc(it.bankKey) + '"' + (it.pct ? ' checked' : '') + '> לספור</label>';
-        else if (it.manual) pctCell = '<button class="btn sm danger" data-act="ptdelman" data-id="' + esc(it.manual.id) + '">🗑</button>';
-        h += '<tr' + (it.pct ? '' : ' style="opacity:.55"') + '><td>' + fmtDate(it.date) + '</td><td>' + esc(it.month) + '</td><td>' + esc(it.kindLabel) + '</td><td class="muted">' + esc(it.note || '') + '</td>' +
-          '<td class="num">' + fmtMoney(it.base) + '</td><td class="num">' + fmtMoney(it.extra, true) + '</td><td class="num">' + fmtMoney(it.cost) + '</td><td>' + pctCell + '</td><td class="num"><b>' + fmtMoney(it.counted, true) + '</b></td></tr>';
+        const pctCell = it.alloc
+          ? '<input data-pt="rowpct" data-key="' + esc(it.allocKey) + '" value="' + esc(P.rowSkip[it.key] ? nz(P.rowPct[it.allocKey] !== undefined ? P.rowPct[it.allocKey] : it.alloc.pct) : it.pct) + '" style="width:46px;direction:ltr;background:#fff2cc">%'
+          : '<span class="muted">100%</span>';
+        const del = it.manual ? '<button class="btn sm danger" data-act="ptdelman" data-id="' + esc(it.manual.id) + '">🗑</button>' : '';
+        h += '<tr' + (it.skipped ? ' class="pt-skip"' : '') + '><td>' + fmtDate(it.date) + '</td><td>' + esc(it.month) + '</td><td>' + esc(it.kindLabel) + '</td><td class="muted" title="' + esc(it.note || '') + '">' + esc(it.note || '') + '</td>' +
+          '<td class="num">' + fmtMoney(it.base) + '</td><td class="num">' + fmtMoney(it.extra, true) + '</td><td class="num">' + fmtMoney(it.cost) + '</td><td>' + pctCell + '</td>' +
+          '<td class="pt-chk"><input type="checkbox" data-pt="rowskip" data-key="' + esc(it.key) + '"' + (it.skipped ? '' : ' checked') + ' title="' + (it.skipped ? 'לא נספר בסה״כ' : 'נספר בסה״כ') + '"></td>' +
+          '<td class="num"><b>' + fmtMoney(it.counted, true) + '</b></td><td>' + del + '</td></tr>';
       });
-      if (x.carry) h += '<tr><td colspan="8">יתרת פתיחה מסגירת השנה הקודמת</td><td class="num"><b>' + fmtMoney(x.carry) + '</b></td></tr>';
+      const skipped = x.items.filter(it => it.skipped);
+      if (skipped.length) h += '<tr class="pt-skip"><td colspan="9">' + skipped.length + ' שורות שהוסרו מהספירה</td><td class="num"><b>' + fmtMoney(r2(skipped.reduce((s, it) => s + it.cost, 0))) + '</b></td><td></td></tr>';
+      if (x.carry) h += '<tr><td colspan="9">יתרת פתיחה מסגירת השנה הקודמת</td><td class="num"><b>' + fmtMoney(x.carry) + '</b></td><td></td></tr>';
+      h += '<tr class="pt-tot"><td colspan="9"><b>סה״כ נספר ל' + esc(x.p.name) + '</b></td><td class="num"><b>' + fmtMoney(x.taken) + '</b></td><td></td></tr>';
       h += '</table>';
     }
     h += '</div>';
@@ -7449,6 +7466,7 @@ function partnersChange(el) {
     case 'apct': { const v = n(); if (v === null) break; a.pct = Math.max(0, Math.min(100, v)); if (a.kind === 'free' && String(freeName(a.ref)).includes('אירה')) P.iraConfirmed = true; break; }
     case 'rowpct': { const v = n(); if (v === null) break; P.rowPct[el.dataset.key] = Math.max(0, Math.min(100, v)); P.iraConfirmed = true; break; }
     case 'pass': P.passRows[el.dataset.key] = el.checked; break;
+    case 'rowskip': { const k2 = el.dataset.key; if (el.checked) delete P.rowSkip[k2]; else P.rowSkip[k2] = true; break; }
     case 'bankrow': P.bankRows[el.dataset.key] = el.checked; break;
     case 'loanInclude': P.loanInclude = el.value === '1'; Object.keys(P.bankRows).forEach(k => { const b = S.ops.bank.rows.find(x => 'bank|' + x.id === k); if (b && /הלוו|הלוא/.test([b.txType, b.description, b.notes].join(' '))) delete P.bankRows[k]; }); break;
     case 'passInclude': P.passInclude = el.value === '1'; P.passRows = {}; break;
