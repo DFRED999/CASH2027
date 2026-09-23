@@ -737,6 +737,11 @@ table.coll-tbl td,table.coll-tbl th{white-space:nowrap}
 .stat.stat-dep{border-top-color:#2f6fc4;cursor:pointer}
 .grid td.cf-today{outline:3px solid var(--red);outline-offset:-3px;background:#fff5f5!important;color:#b00000!important;font-weight:800}
 .grid tr.cf-today-row td.cf-today b{color:#b00000}
+.grid tr.cf-today-bar td{background:#fff5f5!important;border-top:2px solid var(--red);border-bottom:2px solid var(--red);padding:5px 10px!important}
+.grid tr.cf-today-bar .cfb{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:13px}
+.grid tr.cf-today-bar .lbl{color:var(--red);font-weight:800}
+.grid tr.cf-today-bar b{font-size:16px;color:#b00000}
+.grid tr.cf-today-bar .gapinfo{color:#7a5c00;background:#fff3cd;border:1px solid #f3d49b;border-radius:6px;padding:2px 8px;font-size:12px}
 </style>
 </head>
 <body>
@@ -6936,7 +6941,7 @@ function renderCashflow(v) {
         const total = r2(grp.reduce((a, x) => a + x.amount, 0)), lastBal = grp[grp.length - 1].balance;
         const months = [...new Set(grp.map(x => x.grpMonth || ''))].filter(Boolean).join(', ');
         const isPen = r.tabId === 'ops:pensions', gName = isPen ? 'פנסיות' : 'משכורות', emps = new Set(grp.map(x => x.client)).size;
-        h += '<tr class="salgrp' + (isPen ? ' pengrp' : '') + '"><td>' + grp[0].n + (grp.length > 1 ? '–' + grp[grp.length - 1].n : '') + '</td><td class="num">' + fmtDate(r.date) + '</td><td class="num">' + cfText(r, 'month') + '</td><td><span style="color:var(--red)">▼ הוצאה</span></td>' +
+        h += '<tr data-d="' + r.date + '" class="salgrp' + (isPen ? ' pengrp' : '') + '"><td>' + grp[0].n + (grp.length > 1 ? '–' + grp[grp.length - 1].n : '') + '</td><td class="num">' + fmtDate(r.date) + '</td><td class="num">' + cfText(r, 'month') + '</td><td><span style="color:var(--red)">▼ הוצאה</span></td>' +
           '<td></td><td class="num" style="color:var(--red);font-weight:700">' + fmtMoney(total) + '</td><td class="num auto"' + (lastBal < 0 ? ' style="color:var(--red)"' : '') + '><b>' + fmtMoney(lastBal) + '</b></td><td class="h-group">תפעול</td>' +
           '<td class="h-client">' + emps + (emps === 1 ? ' עובד' : ' עובדים') + (isPen && grp.length !== emps ? ' · ' + grp.length + ' הפקדות' : '') + '</td><td class="h-proj"><button class="grp-toggle" data-act="cfsaltoggle" data-k="' + esc(r.salGroup) + '" title="' + (open ? 'כיווץ' : 'הרחבה') + '">' + (open ? '−' : '+') + '</button> <a href="#" data-act="cfsrc" data-tab="' + r.tabId + '" data-rowid="' + r.rowId + '">' + gName + '</a></td><td>' + gName + '</td><td class="muted">' + (isPen ? 'הפקדות ' : 'שכר ') + esc(months) + '</td><td></td><td><span class="status yes">בפועל</span></td></tr>';
         if (open) for (const x of grp) {
@@ -6955,7 +6960,7 @@ function renderCashflow(v) {
         const exp = r2(monthBk.reduce((a, x) => a + (x.dir === 'out' ? x.amount : 0), 0));
         const fcB = monthBk.filter(x => x.status === 'forecast').length;
         const n0 = monthBk[0].n, n1 = monthBk[monthBk.length - 1].n;
-        h += '<tr class="bankgrp"><td>' + n0 + (n1 !== n0 ? '–' + n1 : '') + '</td><td class="num">' + fmtDate(r.date) + '</td><td class="num">' + cfText(r, 'month') + '</td>' +
+        h += '<tr data-d="' + r.date + '" class="bankgrp"><td>' + n0 + (n1 !== n0 ? '–' + n1 : '') + '</td><td class="num">' + fmtDate(r.date) + '</td><td class="num">' + cfText(r, 'month') + '</td>' +
           '<td>' + (net < 0 ? '▲ הכנסה' : '▼ הוצאה') + '</td>' +
           '<td class="num">' + (inc ? fmtMoney(inc) : '') + '</td><td class="num">' + (exp ? fmtMoney(exp) : '') + '</td>' +
           '<td class="num auto"><b>' + fmtMoney(r.balance) + '</b></td><td class="h-group">תפעול</td>' +
@@ -6984,7 +6989,7 @@ function renderCashflow(v) {
         const whos = new Set(monthAu.map(x => x.client)).size;
         const fc = monthAu.filter(x => x.status === 'forecast').length;
         const n0 = monthAu[0].n, n1 = monthAu[monthAu.length - 1].n;
-        h += '<tr class="authgrp"><td>' + n0 + (n1 !== n0 ? '–' + n1 : '') + '</td><td class="num">' + fmtDate(r.date) + '</td><td class="num">' + cfText(r, 'month') + '</td>' +
+        h += '<tr data-d="' + r.date + '" class="authgrp"><td>' + n0 + (n1 !== n0 ? '–' + n1 : '') + '</td><td class="num">' + fmtDate(r.date) + '</td><td class="num">' + cfText(r, 'month') + '</td>' +
           '<td>' + (net < 0 ? '▲ הכנסה' : '▼ הוצאה') + '</td>' +
           '<td class="num">' + (net < 0 ? fmtMoney(Math.abs(net)) : '') + '</td>' +
           '<td class="num">' + (net >= 0 ? fmtMoney(net) : '') + '</td>' +
@@ -7015,7 +7020,7 @@ function renderCashflow(v) {
         const anyFc = monthCc.some(x => x.status === 'forecast');
         const n0 = monthCc[0].n, n1 = monthCc[monthCc.length - 1].n;
         const nTx = monthCc.reduce((a, x) => a + S.ops.credit.rows.filter(y => ccGroupKey(y) === x.ccGroup).length, 0);
-        h += '<tr class="ccgrp"' + (anyFc ? ' style="opacity:.85"' : '') + '><td>' + n0 + (n1 !== n0 ? '–' + n1 : '') + '</td><td class="num">' + fmtDate(r.date) + '</td><td class="num">' + cfText(r, 'month') + '</td>' +
+        h += '<tr data-d="' + r.date + '" class="ccgrp"' + (anyFc ? ' style="opacity:.85"' : '') + '><td>' + n0 + (n1 !== n0 ? '–' + n1 : '') + '</td><td class="num">' + fmtDate(r.date) + '</td><td class="num">' + cfText(r, 'month') + '</td>' +
           '<td>' + (net < 0 ? '<span style="color:var(--green)">▲ הכנסה</span>' : '<span style="color:var(--red)">▼ הוצאה</span>') + '</td>' +
           '<td class="num" style="color:var(--green);font-weight:700">' + (net < 0 ? fmtMoney(Math.abs(net)) : '') + '</td>' +
           '<td class="num" style="color:var(--red);font-weight:700">' + (net >= 0 ? fmtMoney(net) : '') + '</td>' +
@@ -7049,7 +7054,7 @@ function renderCashflow(v) {
       const xc = xl ? xlColor(r) : null;
       const nx = g.rs[i + 1], pv = g.rs[i - 1];
       const xcls = !xl ? '' : (r.pair ? (r.dir === 'in' ? (nx && nx.pair === r.pair ? ' xl-top' : ' xl-top xl-bot') : (pv && pv.pair === r.pair ? ' xl-bot xl-pay' : ' xl-top xl-bot xl-pay')) : (xc ? ' xl-top xl-bot' : ''));
-      h += '<tr' + (r.ptype ? ' data-ptype="' + esc(r.ptype) + '"' : '') + ((r.pair || xc) ? ' class="' + (r.pair ? 'pairrow' : '') + (xc ? ' xlrow' : '') + xcls + '"' : '') + (r.pair ? ' data-pair="' + esc(r.pair) + '" title="צמד תנועות: הכנסה לאטלס ותשלום לספק באותה שורת מקור · ' + esc(r.tabName) + '"' : '') +
+      h += '<tr data-d="' + r.date + '"' + (r.ptype ? ' data-ptype="' + esc(r.ptype) + '"' : '') + ((r.pair || xc) ? ' class="' + (r.pair ? 'pairrow' : '') + (xc ? ' xlrow' : '') + xcls + '"' : '') + (r.pair ? ' data-pair="' + esc(r.pair) + '" title="צמד תנועות: הכנסה לאטלס ותשלום לספק באותה שורת מקור · ' + esc(r.tabName) + '"' : '') +
         ' style="' + (r.status === 'forecast' ? 'opacity:.72;' : '') + (pc ? '--pcb:' + pc.bg + ';--pcl:' + pc.line + ';' : '') + (xc ? '--xc:' + xc + ';' : '') + '"><td>' + r.n + '</td><td class="num">' + fmtDate(r.date) + '</td><td class="num">' + cfText(r, 'month') + '</td><td>' + (r.dir === 'in' ? '<span style="color:var(--green)">▲ הכנסה</span>' : '<span style="color:var(--red)">▼ הוצאה</span>') + '</td>' +
         '<td class="num" style="color:var(--green);font-weight:600">' + (r.dir === 'in' ? fmtMoney(r.amount) : '') + '</td><td class="num" style="color:var(--red);font-weight:600">' + (r.dir === 'out' ? fmtMoney(r.amount) : '') + '</td>' +
         '<td class="num auto"' + (r.balance < 0 ? ' style="color:var(--red)"' : '') + '><b>' + fmtMoney(r.balance) + '</b></td><td class="h-group">' + (r.ptype === 'yazam' || r.ptype === 'mod' ? '<span class="ptag pt-' + r.ptype + '">' + esc(r.group) + '</span>' : esc(r.group)) + '</td><td class="h-client">' + (r.client ? esc(r.client) : '<span class="muted">—</span>') + '</td>' +
@@ -7063,21 +7068,28 @@ function renderCashflow(v) {
   cfMarkToday(v);
   bindCfInputs();
 }
-/* מסגרת אדומה על תא היתרה של התנועה האחרונה בפועל (עד היום) – "כמה כסף יש עכשיו בחשבון" */
+/* סימון היתרה בפועל היום בטבלה + הסבר כשהיא שונה מהיתרה המצטברת
+   (ההפרש = תנועות צפויות שהתאריך שלהן כבר עבר ולא סומנו כשולמו) */
 function cfMarkToday(v) {
   const tb = $('.grid-wrap[data-tab="main"] tbody', v); if (!tb) return;
-  const trs = [...tb.children];
-  const split = trs.findIndex(tr => tr.classList.contains('cfsplit'));
-  const end = split >= 0 ? split : trs.length;
-  for (let i = end - 1; i >= 0; i--) {
-    const tr = trs[i];
-    if (tr.classList.contains('mrow') || tr.classList.contains('cfsplit')) continue;
-    const td = tr.querySelector('td.auto');
-    if (!td || td.textContent.trim() === '—' || !td.textContent.trim()) continue;
-    td.classList.add('cf-today'); td.title = 'היתרה בפועל נכון להיום';
-    tr.classList.add('cf-today-row');
-    break;
-  }
+  const today = todayISO();
+  const trs = [...tb.children].filter(tr => tr.dataset && tr.dataset.d);
+  let tr = null;
+  for (const x of trs) { if (x.dataset.d <= today) tr = x; else break; }
+  if (!tr) return;
+  const td = tr.querySelector('td.auto');
+  const run = td ? num(td.textContent) : null;
+  const actual = actualBalanceToday();
+  const over = cashflowWithBalance(true).filter(r => r.date <= today && r.status === 'forecast');
+  const gap = run === null ? 0 : r2(run - actual);
+  if (td && Math.abs(gap) < 0.01) { td.classList.add('cf-today'); td.title = 'היתרה בפועל נכון להיום'; tr.classList.add('cf-today-row'); }
+  const bar = document.createElement('tr');
+  bar.className = 'cf-today-bar';
+  bar.innerHTML = '<td colspan="' + tr.children.length + '"><div class="cfb"><span class="lbl">● יתרה בפועל היום (' + fmtDate(today) + ')</span>' +
+    '<b dir="ltr">' + fmtMoney(actual) + ' ₪</b>' +
+    (Math.abs(gap) >= 0.01 ? '<span class="gapinfo">היתרה בעמודה כוללת גם ' + over.length + ' תנועות צפויות שהתאריך שלהן כבר עבר (' + fmtMoney(gap) + ' ₪) – <a href="#" data-act="cfoverdue">להצגתן</a></span>' : '') +
+    '</div></td>';
+  tr.after(bar);
 }
 function bindCfInputs() {
   const p = cfPeriod();
@@ -7121,6 +7133,7 @@ function partnersState() {
   if (P.passInclude === undefined) P.passInclude = false;
   if (P.reserve === undefined) P.reserve = 0;
   if (!P.bankRows || typeof P.bankRows !== 'object') P.bankRows = {};
+  if (!Array.isArray(P.manual)) P.manual = [];
   if (P.loanInclude === undefined) P.loanInclude = true;
   if (!P.txTypesAdded) {
     const tt = st.bankTxTypes || (st.bankTxTypes = []);
@@ -7212,6 +7225,11 @@ function partnersCalc(year) {
       const inc = it.pass ? (P.passRows[key] !== undefined ? !!P.passRows[key] : !!P.passInclude) : true;
       items.push(Object.assign(it, { kindLabel: it.pass ? 'תשלום מעבר' : 'תשלום כעצמאי', pct: inc ? 100 : 0, passKey: key }));
     });
+    P.manual.filter(m => m.partner === p.id && String(m.date || '').startsWith(year)).forEach(m => {
+      const amt = r2(nz(m.amount) * (m.dir === 'in' ? -1 : 1));
+      items.push({ src: 'manual', rowId: m.id, date: m.date, month: (m.date || '').slice(5, 7) + '/' + (m.date || '').slice(0, 4),
+        type: 'שורה ידנית', kindLabel: 'שורה ידנית', base: amt, extra: 0, cost: amt, note: (m.dir === 'in' ? 'החזר / הכנסה · ' : 'הוצאה · ') + (m.desc || ''), pct: 100, manual: m });
+    });
     partnerBankItems(p, year, today).forEach(it => {
       const isLoan = /הלוואת/.test(it.kindLabel);
       const def = isLoan ? !!P.loanInclude : true;
@@ -7234,7 +7252,7 @@ function partnersCalc(year) {
     res.partners.push({ p, items, carry, taken, salary: r2(items.filter(it => !it.alloc && it.src === 'emp').reduce((s, it) => s + it.counted, 0)),
       free: by('תשלום כעצמאי'), pass: by('תשלום מעבר'), alloc: by('משויך'), div: by('דיבידנד'),
       loan: r2(by('הלוואת בעלים') + by('החזר הלוואת בעלים')), other: by('משיכה אחרת מהבנק'),
-      loanOpen: r2(items.filter(it => /הלוואת/.test(it.kindLabel)).reduce((s, it) => s + it.cost, 0)) });
+      loanOpen: r2(items.filter(it => /הלוואת/.test(it.kindLabel)).reduce((s, it) => s + it.cost, 0)), manual: by('שורה ידנית') });
     if (!p.empId && !p.freeId) res.warnings.push('לשותף ' + p.name + ' לא שויכו עובד או חוצץ עצמאי – יש לבחור בהגדרות למטה.');
   }
   const shareSum = P.list.reduce((s, p) => s + nz(p.share), 0) || 1;
@@ -7323,8 +7341,8 @@ function renderPartners(v) {
   h += '<div class="hint muted" style="margin-top:6px">החלוקה מכסה קודם את הפער, והיתרה מתחלקת לפי אחוזי השותפות. המשיכה עצמה נרשמת כרגיל – בחוצץ העצמאי של השותף או במשכורת.</div></div>';
   // ---- טבלת רכיבים
   h += '<div class="setting-card"><h3>מה כל שותף קיבל (עלות לחברה)</h3><table class="simple pt-sum"><tr><th>רכיב</th>' + names.map(n => '<th>' + n + '</th>').join('') + (res.partners.length === 2 ? '<th>הפרש</th>' : '') + '</tr>';
-  const comp = [['יתרת פתיחה מהשנה הקודמת', 'carry'], ['משכורת (ברוטו + הפרשות מעסיק)', 'salary'], ['תשלומים כעצמאי (לפני מע״מ)', 'free'], ['הוצאות משויכות (לודמילה, אירה…)', 'alloc'], ['דיבידנד', 'div'], ['הלוואות בעלים (נטו אחרי החזרים)', 'loan'], ['משיכות אחרות מהבנק', 'other'], ['תשלומי מעבר (עירייה)', 'pass']];
-  comp.forEach(([l, k]) => { if ((k === 'carry' || k === 'other') && !res.partners.some(x => x[k])) return; h += '<tr><td>' + l + '</td>' + res.partners.map(x => '<td class="num">' + fmtMoney(x[k], true) + '</td>').join('') + (res.partners.length === 2 ? '<td class="num">' + fmtMoney(r2(A[k] - B[k]), true) + '</td>' : '') + '</tr>'; });
+  const comp = [['יתרת פתיחה מהשנה הקודמת', 'carry'], ['משכורת (ברוטו + הפרשות מעסיק)', 'salary'], ['תשלומים כעצמאי (לפני מע״מ)', 'free'], ['הוצאות משויכות (לודמילה, אירה…)', 'alloc'], ['דיבידנד', 'div'], ['הלוואות בעלים (נטו אחרי החזרים)', 'loan'], ['משיכות אחרות מהבנק', 'other'], ['שורות ידניות (הוצאות פרטיות / החזרים)', 'manual'], ['תשלומי מעבר (עירייה)', 'pass']];
+  comp.forEach(([l, k]) => { if (['carry', 'other', 'manual'].includes(k) && !res.partners.some(x => x[k])) return; h += '<tr><td>' + l + '</td>' + res.partners.map(x => '<td class="num">' + fmtMoney(x[k], true) + '</td>').join('') + (res.partners.length === 2 ? '<td class="num">' + fmtMoney(r2(A[k] - B[k]), true) + '</td>' : '') + '</tr>'; });
   h += '<tr class="pt-tot"><td><b>סה״כ נלקח</b></td>' + res.partners.map(x => '<td class="num"><b>' + fmtMoney(x.taken) + '</b></td>').join('') + (res.partners.length === 2 ? '<td class="num"><b>' + fmtMoney(r2(A.taken - B.taken)) + '</b></td>' : '') + '</tr>';
   h += '<tr><td>מגיע לפי חלק בשותפות</td>' + res.partners.map(x => '<td class="num">' + fmtMoney(x.entitled) + ' <span class="muted">(' + Math.round(x.share * 100) + '%)</span></td>').join('') + (res.partners.length === 2 ? '<td></td>' : '') + '</tr>';
   if (res.partners.some(x => x.loanOpen)) h += '<tr><td class="muted">הלוואות בעלים פתוחות (לא הוחזרו)</td>' + res.partners.map(x => '<td class="num muted">' + fmtMoney(x.loanOpen, true) + '</td>').join('') + (res.partners.length === 2 ? '<td></td>' : '') + '</tr>';
@@ -7343,12 +7361,22 @@ function renderPartners(v) {
     const open = U.open[x.p.id];
     h += '<div class="setting-card"><h3 style="cursor:pointer" data-act="pttoggle" data-p="' + x.p.id + '">' + (open ? '▼' : '◀') + ' פירוט ' + esc(x.p.name) + ' <span class="muted">(' + x.items.length + ' תשלומים · ' + fmtMoney(x.taken) + ')</span></h3>';
     if (open) {
+      const f = (U.filters && U.filters[x.p.id]) || {};
+      const kinds = [...new Set(x.items.map(it => it.kindLabel))];
+      const months = [...new Set(x.items.map(it => it.month))].sort();
+      const sel = (key, list, lab) => '<select data-pt="filter" data-p="' + x.p.id + '" data-f="' + key + '"><option value="">' + lab + '</option>' +
+        list.map(v => '<option' + (f[key] === v ? ' selected' : '') + '>' + esc(v) + '</option>').join('') + '</select>';
+      const shown = x.items.filter(it => (!f.kind || it.kindLabel === f.kind) && (!f.month || it.month === f.month));
+      const shownSum = r2(shown.reduce((s, it) => s + it.counted, 0));
+      h += '<div class="toolbar">' + sel('kind', kinds, 'כל הסוגים') + sel('month', months, 'כל החודשים') +
+        ((f.kind || f.month) ? '<button class="btn sm" data-act="ptclearf" data-p="' + x.p.id + '">✖ ניקוי סינון</button><span class="muted">מוצגות ' + shown.length + ' מתוך ' + x.items.length + ' · סה״כ מסונן <b dir="ltr">' + fmtMoney(shownSum) + '</b></span>' : '') + '</div>';
       h += '<table class="simple"><tr><th>תאריך תשלום</th><th>עבור חודש</th><th>סוג</th><th>פירוט</th><th>ברוטו / לפני מע״מ</th><th>הפרשות מעסיק</th><th>עלות לחברה</th><th>% נזקף</th><th>נספר</th></tr>';
-      x.items.forEach(it => {
+      shown.forEach(it => {
         let pctCell = '100%';
         if (it.alloc) pctCell = '<input data-pt="rowpct" data-key="' + esc(it.allocKey) + '" value="' + esc(it.pct) + '" style="width:54px;direction:ltr;background:#fff2cc">%';
         else if (it.pass) pctCell = '<label><input type="checkbox" data-pt="pass" data-key="' + esc(it.passKey) + '"' + (it.pct ? ' checked' : '') + '> לספור</label>';
         else if (it.bankKey) pctCell = '<label><input type="checkbox" data-pt="bankrow" data-key="' + esc(it.bankKey) + '"' + (it.pct ? ' checked' : '') + '> לספור</label>';
+        else if (it.manual) pctCell = '<button class="btn sm danger" data-act="ptdelman" data-id="' + esc(it.manual.id) + '">🗑</button>';
         h += '<tr' + (it.pct ? '' : ' style="opacity:.55"') + '><td>' + fmtDate(it.date) + '</td><td>' + esc(it.month) + '</td><td>' + esc(it.kindLabel) + '</td><td class="muted">' + esc(it.note || '') + '</td>' +
           '<td class="num">' + fmtMoney(it.base) + '</td><td class="num">' + fmtMoney(it.extra, true) + '</td><td class="num">' + fmtMoney(it.cost) + '</td><td>' + pctCell + '</td><td class="num"><b>' + fmtMoney(it.counted, true) + '</b></td></tr>';
       });
@@ -7357,6 +7385,20 @@ function renderPartners(v) {
     }
     h += '</div>';
   });
+  // ---- שורות ידניות
+  const partOptsM = s => P.list.map(pp => '<option value="' + pp.id + '"' + (pp.id === s ? ' selected' : '') + '>' + esc(pp.name) + '</option>').join('');
+  const man = P.manual.filter(m => String(m.date || '').startsWith(U.year)).sort((a, b) => String(a.date).localeCompare(String(b.date)));
+  h += '<div class="setting-card"><h3>✍ שורות ידניות – הוצאות פרטיות על חשבון החברה והחזרים</h3>' +
+    '<div class="hint muted" style="margin-bottom:6px">שורות שנכנסות רק לטבלת האיזון כאן. הן אינן מופיעות בתזרים, בבנק או באשראי, ואינן משנות את יתרת החשבון. "הוצאה" = כסף של החברה שנוצל לצורך פרטי ונספר כמשיכה; "החזר / הכנסה" = כסף שהוחזר לחברה ומקטין את המשיכה.</div>' +
+    '<table class="simple" style="max-width:900px"><tr><th>תאריך</th><th>שותף</th><th>סוג</th><th>תיאור</th><th>סכום</th><th></th></tr>' +
+    (man.length ? man.map(m => '<tr><td><input data-pt="mdate" data-id="' + m.id + '" value="' + esc(m.date ? fmtDate(m.date) : '') + '" placeholder="dd/mm/yyyy" style="width:110px;direction:ltr"></td>' +
+      '<td><select data-pt="mpartner" data-id="' + m.id + '">' + partOptsM(m.partner) + '</select></td>' +
+      '<td><select data-pt="mdir" data-id="' + m.id + '"><option value="out"' + (m.dir !== 'in' ? ' selected' : '') + '>הוצאה (נספרת כמשיכה)</option><option value="in"' + (m.dir === 'in' ? ' selected' : '') + '>החזר / הכנסה</option></select></td>' +
+      '<td><input data-pt="mdesc" data-id="' + m.id + '" value="' + esc(m.desc || '') + '" placeholder="למשל: ארוחה פרטית בכרטיס החברה" style="width:100%"></td>' +
+      '<td><input data-pt="mamount" data-id="' + m.id + '" value="' + esc(fmtMoney(nz(m.amount))) + '" style="width:110px;direction:ltr;background:#fff2cc"></td>' +
+      '<td><button class="btn sm danger" data-act="ptdelman" data-id="' + m.id + '">🗑</button></td></tr>').join('')
+      : '<tr><td colspan="6" class="muted" style="text-align:center;padding:12px">אין שורות ידניות בשנת ' + U.year + '</td></tr>') +
+    '</table><div class="toolbar" style="margin-top:6px"><button class="btn sm primary" data-act="ptaddman">＋ הוספת שורה ידנית</button></div></div>';
   // ---- הגדרות
   const empOpts = sel => '<option value="">—</option>' + S.employees.map(e => '<option value="' + e.id + '"' + (e.id === sel ? ' selected' : '') + '>' + esc(e.name) + '</option>').join('');
   const freeOpts = sel => '<option value="">—</option>' + S.entityOrder.filter(id => S.entities[id].type === 'freelancer').map(id => '<option value="' + id + '"' + (id === sel ? ' selected' : '') + '>' + esc(S.entities[id].name) + '</option>').join('');
@@ -7392,6 +7434,12 @@ function partnersChange(el) {
     case 'loanInclude': P.loanInclude = el.value === '1'; Object.keys(P.bankRows).forEach(k => { const b = S.ops.bank.rows.find(x => 'bank|' + x.id === k); if (b && /הלוו|הלוא/.test([b.txType, b.description, b.notes].join(' '))) delete P.bankRows[k]; }); break;
     case 'passInclude': P.passInclude = el.value === '1'; P.passRows = {}; break;
     case 'reserve': { const v = n(); if (v === null) break; P.reserve = v; break; }
+    case 'filter': { const U2 = partnersUI(); U2.filters = U2.filters || {}; const ff = U2.filters[el.dataset.p] = U2.filters[el.dataset.p] || {}; ff[el.dataset.f] = el.value; break; }
+    case 'mdate': { const iso = parseDateInput(el.value); if (iso === null) { toast('תאריך לא תקין (dd/mm/yyyy)', 'err'); break; } const m = P.manual.find(z => z.id === id); if (m) m.date = iso; break; }
+    case 'mpartner': { const m = P.manual.find(z => z.id === id); if (m) m.partner = el.value; break; }
+    case 'mdir': { const m = P.manual.find(z => z.id === id); if (m) m.dir = el.value; break; }
+    case 'mdesc': { const m = P.manual.find(z => z.id === id); if (m) m.desc = el.value.trim(); break; }
+    case 'mamount': { const v = n(); if (v === null) break; const m = P.manual.find(z => z.id === id); if (m) m.amount = Math.abs(v); break; }
   }
   markDirty(); render();
 }
@@ -7401,6 +7449,9 @@ function partnersAction(act, el) {
     case 'pttoggle': U.open[el.dataset.p] = !U.open[el.dataset.p]; render(); return true;
     case 'ptdrawgap': { const res = partnersCalc(U.year); U.draw = r2(res.partners.reduce((s, x) => s + x.need, 0)); render(); return true; }
     case 'ptdrawavail': U.draw = Math.max(0, r2(actualBalanceToday() - nz(P.reserve))); render(); return true;
+    case 'ptaddman': P.manual.push({ id: uid('mn'), partner: P.list[0] ? P.list[0].id : '', date: (U.year === curMonth().slice(0, 4) ? todayISO() : U.year + '-01-01'), dir: 'out', desc: '', amount: 0 }); markDirty(); render(); return true;
+    case 'ptdelman': P.manual = P.manual.filter(m => m.id !== el.dataset.id); markDirty(); render(); return true;
+    case 'ptclearf': { U.filters = U.filters || {}; U.filters[el.dataset.p] = {}; render(); return true; }
     case 'ptaddalloc': P.allocs.push({ id: uid('al'), kind: el.dataset.kind, ref: '', partner: P.list[0] ? P.list[0].id : '', pct: 100 }); markDirty(); render(); return true;
     case 'ptdelalloc': P.allocs = P.allocs.filter(a => a.id !== el.dataset.id); markDirty(); render(); return true;
     case 'ptclose': {
@@ -7708,6 +7759,7 @@ function viewAction(act, el, e) {
   if (alertAction(act, el, e)) return;
   switch (act) {
     case 'cfrebuild': render(); toast('התזרים נבנה מחדש מחוצצי המקור. נתוני המקור לא שונו.', 'ok'); break;
+    case 'cfoverdue': e && e.preventDefault && e.preventDefault(); collectUI().status = 'late'; collectUI().type = ''; navigate('collect'); break;
     case 'cfdep': UI.depOpen = true; navigate('ops:bank'); break;
     case 'cfskin': S.settings.cfSkin = { classic: 'soft', soft: 'excel', excel: 'classic' }[S.settings.cfSkin] || 'soft'; markDirty(); render(); break;
     case 'cfclear': UI.filters.main = {}; render(); break;
