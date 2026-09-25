@@ -904,7 +904,7 @@ function defaultState() {
       // תנועות הבנק בגיליון הראשי: false = כל תנועה בשורה נפרדת (ברירת מחדל), true = שורה מרוכזת לחודש
       cfBankGroup: false,
       // איך מחושבת "היתרה בפועל היום": 'date' = לפי תאריך התנועה · 'flag' = רק מה שסומן בפועל
-      balanceMode: 'date',
+      balanceMode: 'flag',
       bankFee: { startMonth: '', history: [{ from: '0000-00', amount: 26 }], generated: {} },
       bankTxTypes: BANK_TX_TYPES.slice(),
       // קבוצות שמות של אותו אדם (השם הראשון הוא השם הראשי)
@@ -967,6 +967,8 @@ function normalizeState(o) {
   const s = Object.assign(d, o || {});
   s.settings = Object.assign(defaultState().settings, (o && o.settings) || {});
   s.settings.bankFee = Object.assign(defaultState().settings.bankFee, s.settings.bankFee || {});
+  // תיקון חד-פעמי: "היתרה בפועל" נספרת לפי מה שסומן כבוצע, ולא לפי כל מה שתאריכו עבר
+  if (!s.settings.balModeFix) { s.settings.balanceMode = 'flag'; s.settings.balModeFix = 1; }
   s.ops = Object.assign(defaultState().ops, s.ops || {});
   for (const k of Object.keys(defaultState().ops)) {
     s.ops[k] = Object.assign({ docPath: '', rows: [] }, s.ops[k] || {});
@@ -7117,11 +7119,12 @@ function cfMarkToday(v) {
   const over = pendingPastRows();
   const gap = run === null ? 0 : r2(run - actual);
   if (td && Math.abs(gap) < 0.01) { td.classList.add('cf-today'); td.title = 'היתרה בפועל נכון להיום'; tr.classList.add('cf-today-row'); }
+  const byDate = r2(pendingPastRows().reduce((s2, r) => s2 + (r.dir === 'in' ? r.amount : -r.amount), actualBalanceToday()));
   const bar = document.createElement('tr');
   bar.className = 'cf-today-bar';
   bar.innerHTML = '<td colspan="' + tr.children.length + '"><div class="cfb"><span class="lbl">● יתרה בפועל היום (' + fmtDate(today) + ')</span>' +
     '<b dir="ltr">' + fmtMoney(actual) + ' ₪</b>' +
-    (over.length ? '<span class="gapinfo">כולל ' + over.length + ' תנועות שהתאריך שלהן עבר וטרם סומנו/התקבל עליהן מסמך' + (Math.abs(gap) >= 0.01 ? ' · הפרש ' + fmtMoney(gap) + ' ₪ מהיתרה בעמודה' : '') + ' – <a href="#" data-act="cfoverdue">להצגתן</a></span>' : '') +
+    (over.length ? '<span class="gapinfo">' + over.length + ' תנועות שהתאריך שלהן עבר וטרם סומנו כבוצעו (' + fmtMoney(r2(byDate - actualBalanceToday())) + ' ₪). לפיהן היתרה תהיה ' + fmtMoney(byDate) + ' ₪ – <a href="#" data-act="cfoverdue">להצגתן</a></span>' : '') +
     '</div></td>';
   tr.after(bar);
 }
