@@ -752,6 +752,31 @@ table.coll-tbl td,table.coll-tbl th{white-space:nowrap}
 .pt-det td.pt-doc{direction:ltr;text-align:right;font-size:11.5px}
 .pt-chart{background:#fff;border:1px solid var(--line);border-radius:10px;padding:8px 6px 4px;margin-bottom:10px;overflow-x:auto}
 .pt-legend{display:flex;gap:14px;align-items:center;flex-wrap:wrap;font-size:12px;padding:2px 8px 4px}
+/* ---- 📄 דוח חודשי ---- */
+/* ---- 📤 חלון הפקת דוח + תצוגת תקציר מנהלים ---- */
+.rep-kinds{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:12px}
+.rep-kind{display:flex;flex-direction:column;gap:2px;border:1.5px solid var(--line);border-radius:10px;padding:9px 12px;cursor:pointer;background:#fff;position:relative}
+.rep-kind.on{border-color:var(--navy);background:var(--lav)}
+.rep-kind b{font-size:13.5px}.rep-kind span{font-size:11.5px;color:var(--muted)}
+.rep-kind input{position:absolute;inset-inline-end:10px;top:10px}
+.rep-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:9px 0;border-top:1px solid var(--line)}
+.rep-row.col{display:block}.rep-row>b{font-size:13px;min-width:74px;display:inline-block}
+.rep-row.col>b{display:block;margin-bottom:6px}
+.rep-row .seg{display:inline-flex;border:1px solid var(--navy);border-radius:9px;overflow:hidden}
+.rep-row .seg button{border:0;background:#fff;color:var(--navy);padding:5px 12px;font-size:12.5px;cursor:pointer}
+.rep-row .seg button.on{background:var(--navy);color:#fff}
+.rep-picks,.rep-ents{display:flex;flex-wrap:wrap;gap:6px}
+.rep-ents{max-height:190px;overflow:auto;padding:2px}
+.rep-pick{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--line);border-radius:20px;padding:4px 11px;font-size:12.5px;cursor:pointer;background:#fff}
+.rep-pick.on{border-color:var(--navy);background:var(--lav);font-weight:600}
+.rep-mini{display:flex;gap:6px;margin-top:7px}
+.rep-note{font-size:12px;color:var(--muted);background:var(--auto);border-radius:9px;padding:9px 11px;margin-top:9px;line-height:1.6}
+.rep-sum{margin-top:11px;padding-top:9px;border-top:1px solid var(--line);font-size:13px;font-weight:600;color:var(--navy)}
+#repView{position:fixed;inset:0;background:rgba(10,14,25,.72);z-index:60;display:flex;flex-direction:column}
+#repView .rv-bar{display:flex;align-items:center;gap:8px;padding:9px 14px;background:var(--navy);color:#fff;font-size:14px}
+#repView .rv-body{flex:1;overflow:auto;display:flex;justify-content:center;padding:14px}
+#repView iframe{width:1120px;height:772px;border:0;border-radius:12px;background:#eceef2;box-shadow:0 20px 60px rgba(0,0,0,.4)}
+@media (max-width:1180px){#repView iframe{transform:scale(.8);transform-origin:top center}}
 /* ---- 🧾 הגשות חודשיות ---- */
 .bl-card{border:2px solid var(--gold);border-radius:12px;background:#fffdf5;padding:10px 12px;margin-bottom:10px}
 .bl-card.ok{border-color:var(--green);background:#f4fbf6}
@@ -6992,7 +7017,7 @@ function renderCashflow(v) {
   const an = pendingAnomalyCount(); if (an) msgs.push(['warn', an + ' אנומליות ממתינות לבירור – <a href="#" data-nav-an="1">לרשימה</a>']);
   if (msgs.length) h += '<div style="display:flex;flex-direction:column;gap:6px;margin-bottom:10px">' + msgs.map(x => '<div class="msg ' + x[0] + '">' + x[1] + '</div>').join('') + '</div>';
   h += billingCardHTML();
-  h += '<div class="toolbar"><button class="btn primary" data-act="cfrebuild">🔄 בנייה מחדש של התזרים</button><button class="btn" data-act="cfxlsx">📗 Excel</button><button class="btn" data-act="cfpdf">📕 PDF</button><button class="btn" data-act="cfclear"' + (Object.values(f).some(Boolean) ? '' : ' disabled') + '>✖ ניקוי מסננים</button></div>';
+  h += '<div class="toolbar"><button class="btn primary" data-act="cfrebuild">🔄 בנייה מחדש של התזרים</button><button class="btn" data-act="cfxlsx" title="הפקת דוח – בחירת תוכן, תקופה ופורמט">📗 Excel</button><button class="btn" data-act="cfpdf" title="הפקת דוח – בחירת תוכן, תקופה ופורמט">📕 PDF</button><button class="btn" data-act="cfclear"' + (Object.values(f).some(Boolean) ? '' : ' disabled') + '>✖ ניקוי מסננים</button></div>';
   const balToday = balanceToday(), depNow = depBalance();
   h += '<div class="stats">' + statHTML('הכנסות', fmtMoney(income), 'green') + statHTML('הוצאות', fmtMoney(expense), 'red') +
     statHTML('נטו', fmtMoney(r2(income - expense)), 'gold') + statHTML(p.mode === 'all' ? 'יתרת סגירה' : 'יתרת סגירה לתקופה', '<span' + (d.closing < 0 ? ' style="color:var(--red)"' : '') + '>' + fmtMoney(d.closing) + '</span>') +
@@ -8005,14 +8030,8 @@ function viewAction(act, el, e) {
       if (!String(row[el.dataset.field] || '').trim() || String(row[el.dataset.field]).trim() === '0') { toast('מסמך חסר – יש להזין מספר מסמך בחוצץ המקור', 'err'); return; }
       openDoc(t, row, el.dataset.field); break;
     }
-    case 'cfxlsx': case 'cfpdf': {
-      const { rows } = cfFiltered();
-      const head = CF_COLS.map(c => c.label);
-      const body = rows.map(r => CF_COLS.map(c => c.key === 'income' ? (r.dir === 'in' ? r.amount : '') : c.key === 'expense' ? (r.dir === 'out' ? r.amount : '') : c.key === 'balance' ? r.balance : cfText(r, c.key)));
-      const pl = periodLabel(cfPeriod());
-      if (act === 'cfxlsx') exportExcel('תזרים ' + pl, head, body); else exportPDF('גיליון ראשי – תזרים', head, body, 'תקופה: ' + pl);
-      break;
-    }
+    case 'cfxlsx': openReportModal('xlsx'); break;
+    case 'cfpdf': openReportModal('pdf'); break;
     case 'an-decide': {
       const key = el.dataset.key, status = el.dataset.status;
       const a = detectAnomalies().find(x => x.key === key); if (!a) return;
@@ -8877,6 +8896,549 @@ function billingPopupCheck() {
     body: body + '<p class="muted" style="margin:0">התזכורת מוצגת פעם ביום בתחילת החודש. אפשר לכבות אותה במסך ההגשות.</p>',
     buttons: [{ label: 'פתיחת מסך ההגשות', cls: 'primary', onClick: () => { billingUI().ym = list[list.length - 1].ym; navigate('billing'); } }, { label: 'תזכיר לי מחר' }]
   });
+}
+
+/* =====================================================================
+   📄 הפקת דוחות – חלון הגדרה אחד שנפתח מכפתורי ה-Excel / ה-PDF
+   שבגיליון הראשי. אפשר להפיק: תזרים בלבד · דוח מלא (גיבוי כל הנתונים) ·
+   תקציר מנהלים בעמוד אחד · פרויקטים נבחרים. אין נתונים בקוד – הכול נגזר.
+   ===================================================================== */
+const REP_SECTIONS = [
+  { key: 'sum', title: 'תקציר מנהלים' },
+  { key: 'cf', title: 'תזרים' },
+  { key: 'income', title: 'חשבונות הפרויקטים' },
+  { key: 'sup', title: 'תשלומים לספקים' },
+  { key: 'sal', title: 'שכר עובדים' },
+  { key: 'pen', title: 'הפקדות לקופות' },
+  { key: 'auth', title: 'תשלומים לרשויות' },
+  { key: 'cc', title: 'כרטיסי אשראי' },
+  { key: 'bank', title: 'תנועות בנק' },
+  { key: 'collect', title: 'גבייה פתוחה' },
+  { key: 'billing', title: 'סטטוס הגשות' },
+  { key: 'orders', title: 'הזמנות משהב״ט' },
+  { key: 'partners', title: 'משיכות שותפים' }
+];
+const REP_PROJ_ONLY = ['sum', 'cf', 'income', 'sup', 'collect', 'billing', 'orders'];
+const REP_KINDS = {
+  cf: { label: 'תזרים בלבד', hint: 'טבלת התזרים של התקופה – כמו הכפתור הישן' },
+  full: { label: 'דוח מלא – כל נתוני האתר', hint: 'גיבוי מלא: כל הנושאים, כל השורות' },
+  exec: { label: 'תקציר מנהלים – עמוד אחד', hint: 'תמונת מצב ויזואלית לך ולשותף' },
+  proj: { label: 'פרויקטים נבחרים', hint: 'רק הפרויקטים שתבחר, כולל השורות שלהם' }
+};
+function repUI() {
+  const U = UI.report || (UI.report = {});
+  if (!U.kind) U.kind = 'exec';
+  if (!U.mode) U.mode = 'month';
+  if (!U.ym) U.ym = monthAdd(curMonth(), -1);
+  if (!U.year) U.year = curMonth().slice(0, 4);
+  if (!U.mFrom) U.mFrom = monthAdd(curMonth(), -2);
+  if (!U.mTo) U.mTo = curMonth();
+  if (!U.off) U.off = {};
+  if (!Array.isArray(U.ents)) U.ents = [];
+  return U;
+}
+function repRange() {
+  const U = repUI();
+  if (U.kind === 'cf' && U.cfLive !== false) {
+    const p = cfPeriod(), b = periodBounds(p);
+    return { from: b ? b.from : '0000-01-01', to: b ? b.to : '9999-12-31', label: periodLabel(p), ym: monthAdd(curMonth(), -1), all: !b, live: true };
+  }
+  if (U.mode === 'year') return { from: U.year + '-01-01', to: U.year + '-12-31', label: 'שנת ' + U.year, ym: U.year + '-12' };
+  if (U.mode === 'range') { let a = U.mFrom, b = U.mTo; if (a > b) { const t = a; a = b; b = t; } return { from: a + '-01', to: monthEnd(b), label: monthName(a) + ' – ' + monthName(b), ym: b }; }
+  if (U.mode === 'all') return { from: '0000-01-01', to: '9999-12-31', label: 'כל התקופות', ym: monthAdd(curMonth(), -1), all: true };
+  return { from: U.ym + '-01', to: monthEnd(U.ym), label: monthName(U.ym), ym: U.ym };
+}
+function repOn(k) {
+  const U = repUI();
+  if (U.kind === 'cf') return k === 'cf';
+  if (U.kind === 'exec') return k === 'sum';
+  if (U.kind === 'proj') return REP_PROJ_ONLY.includes(k) && !U.off[k];
+  return !U.off[k];
+}
+function repEnts() { const U = repUI(); return U.kind === 'proj' && U.ents.length ? U.ents : null; }
+function repYMof(row) { return row.year && row.month ? row.year + '-' + pad2(row.month) : ''; }
+function repInRange(d, R) { const s = String(d || ''); return !!s && s >= R.from && s <= R.to; }
+function repOpsItems(tabId, pick) {
+  const t = tabInfo(tabId); if (!t) return { t: null, items: [] };
+  return { t, items: t.rows.filter(pick).map(row => ({ row, c: calcRow(t.kind, row) })) };
+}
+function repTotal(head, body, cols, label) {
+  if (!body.length) return null;
+  const row = head.map(() => '');
+  row[0] = label || 'סה״כ';
+  cols.forEach(i => { row[i] = r2(body.reduce((s, b) => s + (typeof b[i] === 'number' ? b[i] : 0), 0)); });
+  return row;
+}
+function repNumCols(t) { const out = []; t.cols.forEach((c, i) => { if (c.money && ['num', 'computed', 'numAuto'].includes(c.type)) out.push(i); }); return out; }
+const REP_INT_HEAD = /^(#|מס״ד|שנה|חודש|שורות|שעות|ימים|ימים שנותרו|ימים מההגשה|סה״כ ק״מ|ק״מ ליום|מע״מ %|% ספק)$/;
+function repFmt(x, head) { return typeof x !== 'number' ? String(x == null ? '' : x) : (REP_INT_HEAD.test(String(head || '')) ? String(x) : fmtMoney(x)); }
+function repPreVat(x) { return x.e.type === 'mod' ? r2(nz(x.c.preVat)) : r2(nz(x.c.netAdj)); }
+function repProjects() { return S.entityOrder.filter(id => S.entities[id] && PROJECT_TYPES.includes(S.entities[id].type)); }
+
+/* ---------- איסוף הנתונים של התקופה ---------- */
+function repData(R, ents) {
+  const today = todayISO(), inEnt = id => !ents || ents.includes(id);
+  const all = cashflowWithBalance(true);
+  const cf = all.filter(r => r.date >= R.from && r.date <= R.to && (!ents || ents.includes(r.tabId)));
+  const inc = r2(cf.reduce((s, r) => s + (r.dir === 'in' ? r.amount : 0), 0));
+  const exp = r2(cf.reduce((s, r) => s + (r.dir === 'out' ? r.amount : 0), 0));
+  const openBal = R.all ? nz(S.settings.openingBalance) : balanceThrough(all, addDays(R.from, -1));
+  const closeBal = R.all ? (all.length ? all[all.length - 1].balance : 0) : balanceThrough(all, R.to);
+  const proj = [], sup = [];
+  for (const id of repProjects()) {
+    if (!inEnt(id)) continue;
+    const e = S.entities[id];
+    for (const row of e.rows) {
+      const c = calcRow(e.type, row);
+      const ym = repYMof(row);
+      if (ym && ym >= R.from.slice(0, 7) && ym <= R.to.slice(0, 7)) proj.push({ e, row, c });
+      if (c.supplierOn && nz(c.supplierPay) && repInRange(c.supplierPayDate, R)) sup.push({ e, row, c, d: c.supplierPayDate });
+    }
+  }
+  const salQ = repOpsItems('ops:salaries', r => { const y = repYMof(r); return y >= R.from.slice(0, 7) && y <= R.to.slice(0, 7); });
+  const penQ = repOpsItems('ops:pensions', r => { const y = repYMof(r); return y >= R.from.slice(0, 7) && y <= R.to.slice(0, 7); });
+  const authQ = repOpsItems('ops:authorities', r => repInRange(r.payDate || r.dueDate, R));
+  const ccQ = repOpsItems('ops:credit', r => repInRange(r.txDate, R));
+  const bankQ = repOpsItems('ops:bank', r => repInRange(r.date, R));
+  const collAll = collectRows(), owedAll = supplierOwedRows();
+  const coll = collAll.filter(r => inEnt(r.tabId)), owed = owedAll.filter(r => inEnt(r.tabId));
+  const bill = billingSummary(R.ym);
+  const billRows = ents ? bill.rows.filter(r => inEnt(r.id)) : bill.rows;
+  const ords = (typeof ordersDashRows === 'function' ? ordersDashRows() : []).filter(r => inEnt(r.entId));
+  const fc = all.filter(r => r.date > today && r.date <= addDays(today, 30));
+  return {
+    R, ents, today, all, cf, inc, exp, net: r2(inc - exp), openBal, closeBal, proj, sup,
+    salQ, penQ, authQ, ccQ, bankQ, coll, owed, bill, billRows, ords,
+    projTotal: r2(proj.reduce((s, x) => s + nz(x.c.total), 0)),
+    projSup: r2(proj.reduce((s, x) => s + nz(x.c.supplierPay), 0)),
+    projNet: r2(proj.reduce((s, x) => s + nz(x.c.atlasNet), 0)),
+    supPaid: r2(sup.reduce((s, x) => s + nz(x.c.supplierPay), 0)),
+    salNet: r2(salQ.items.reduce((s, x) => s + nz(x.row.net), 0)),
+    salCost: r2(salQ.items.reduce((s, x) => s + nz(x.row.grossTotal) + nz(x.c.funds), 0)),
+    penSum: r2(penQ.items.reduce((s, x) => s + nz(x.c.total), 0)),
+    authSum: r2(authQ.items.reduce((s, x) => s + (x.c.isCredit ? -nz(x.c.amount) : nz(x.c.amount)), 0)),
+    ccSum: r2(ccQ.items.reduce((s, x) => s + nz(x.c.signed), 0)),
+    collSum: r2(coll.reduce((s, r) => s + r.total, 0)),
+    collLate: r2(coll.filter(r => r.sk === 'late').reduce((s, r) => s + r.total, 0)),
+    collLateN: coll.filter(r => r.sk === 'late').length,
+    owedSum: r2(owed.reduce((s, r) => s + r.amount, 0)),
+    bank: balanceToday(), dep: depBalance(),
+    fcIn: r2(fc.reduce((s, r) => s + (r.dir === 'in' ? r.amount : 0), 0)),
+    fcOut: r2(fc.reduce((s, r) => s + (r.dir === 'out' ? r.amount : 0), 0))
+  };
+}
+/* מגמת 6 החודשים האחרונים עד סוף התקופה */
+function repTrend(R, n) {
+  const all = cashflowWithBalance(true), end = R.all ? curMonth() : R.to.slice(0, 7), out = [];
+  for (let i = (n || 6) - 1; i >= 0; i--) {
+    const m = monthAdd(end, -i), a = m + '-01', b = monthEnd(m);
+    const rs = all.filter(r => r.date >= a && r.date <= b);
+    out.push({ m, inc: r2(rs.reduce((s, r) => s + (r.dir === 'in' ? r.amount : 0), 0)), exp: r2(rs.reduce((s, r) => s + (r.dir === 'out' ? r.amount : 0), 0)) });
+  }
+  out.forEach(x => x.net = r2(x.inc - x.exp));
+  return out;
+}
+function repPartners(R) {
+  try {
+    const res = partnersCalc(R.all ? curMonth().slice(0, 4) : R.to.slice(0, 4));
+    const rows = [];
+    res.partners.forEach(p => p.items.filter(it => repInRange(it.date, R)).forEach(it => rows.push({ p, it })));
+    rows.sort((a, b) => String(a.it.date).localeCompare(String(b.it.date)));
+    const vals = res.partners.map(p => r2(p.items.filter(it => repInRange(it.date, R)).reduce((s, it) => s + it.counted, 0)));
+    return { res, rows, vals, names: res.partners.map(p => p.p.name), gaps: res.partners.map(p => p.gap), need: res.partners.map(p => p.need) };
+  } catch (e) { return null; }
+}
+
+/* ---------- בניית הנושאים ---------- */
+function repBuild(R, ents) {
+  const D = repData(R, ents), secs = [];
+  const add = (key, head, body, note, tot) => {
+    const s = REP_SECTIONS.find(x => x.key === key);
+    secs.push({ key, title: s ? s.title : key, head, body, note: note || '', tot: tot || null, on: repOn(key) });
+  };
+  const P = repPartners(R);
+
+  const kv = [], K = (a, b) => kv.push([a, b]);
+  K('תקופת הדוח', R.label);
+  K('יתרת עו״ש בתחילת התקופה', D.openBal);
+  K('סה״כ הכנסות', D.inc);
+  K('סה״כ הוצאות', D.exp);
+  K('נטו תזרימי', D.net);
+  K('יתרת עו״ש בסוף התקופה', D.closeBal);
+  K('— — —', '');
+  K('חשבונות שהופקו', D.proj.length + ' חשבונות');
+  K('היקף החשבונות – כולל מע״מ', D.projTotal);
+  K('מתוכם תשלום לספקים', D.projSup);
+  K('נטו לאטלס מהחשבונות', D.projNet);
+  K('חשבונות שהוגשו מתוך הצפויים (' + monthName(R.ym) + ')', D.bill.done.length + ' מתוך ' + D.bill.act.length);
+  K('— — — ', '');
+  K('עלות שכר (ברוטו + קרנות)', D.salCost);
+  K('נטו לעובדים', D.salNet);
+  K('הפקדות לקופות', D.penSum);
+  K('תשלומים לרשויות', D.authSum);
+  K('עסקאות אשראי', D.ccSum);
+  K('תשלומים לספקים', D.supPaid);
+  K('— — —  ', '');
+  K('גבייה פתוחה (נכון ל' + fmtDate(D.today) + ')', D.collSum);
+  K('מתוכה באיחור', D.collLate);
+  K('חוב לספקים שטרם שולם', D.owedSum);
+  K('— — —   ', '');
+  K('יתרה בפועל היום · עו״ש', D.bank);
+  K('פיקדון', D.dep);
+  K('סה״כ בבנק', r2(D.bank + D.dep));
+  if (P) P.names.forEach((nm, i) => K('משיכות ' + nm + ' בתקופה', P.vals[i]));
+  add('sum', ['נתון', 'ערך'], kv, 'כל הסכומים בשקלים · סכומי הפרויקטים כוללים מע״מ · חשבונות מיוחסים לחודש העבודה שלהם.');
+
+  const cfRows = R.live ? cfFiltered().rows : D.cf;
+  const cfIn = R.live ? r2(cfRows.reduce((s, r) => s + (r.dir === 'in' ? r.amount : 0), 0)) : D.inc;
+  const cfOut = R.live ? r2(cfRows.reduce((s, r) => s + (r.dir === 'out' ? r.amount : 0), 0)) : D.exp;
+  add('cf', ['#', 'תאריך', 'סוג', 'הכנסה', 'הוצאה', 'יתרה', 'סוג / קבוצה', 'לקוח / גוף', 'פרויקט / חוצץ', 'תנועה', 'תיאור', 'סטטוס'],
+    cfRows.map(r => [r.n, fmtDate(r.date), r.dir === 'in' ? 'הכנסה' : 'הוצאה', r.dir === 'in' ? r.amount : '', r.dir === 'out' ? r.amount : '',
+      r.balance, r.group || '', r.client || '', r.tabName || '', r.role || '', r.desc || '', r.status === 'actual' ? 'בפועל' : 'צפוי']),
+    (R.live ? 'התזרים כפי שמוצג בגיליון הראשי – כולל הסינון הפעיל' : 'כל תנועות התזרים בתקופה, כולל צפויות') +
+    ' · יתרת פתיחה ' + fmtMoney(D.openBal) + ' ₪ · יתרת סגירה ' + fmtMoney(D.closeBal) + ' ₪',
+    ['סה״כ', '', '', cfIn, cfOut, D.closeBal, '', '', '', '', '', '']);
+
+  add('income', ['מס״ד', 'סוג', 'ענף / לקוח', 'פרויקט', 'אחראי', 'חודש', 'הזמנה', 'ח. עסקה', 'ח. מס קבלה', 'שעות', 'לפני מע״מ', 'מע״מ', 'כולל מע״מ', 'תשלום לספק', 'נטו לאטלס', 'הוגש', 'צפי קבלת כסף', 'התקבל'],
+    D.proj.map((x, i) => [i + 1, x.e.type === 'mod' ? 'משהב״ט' : x.e.type === 'yazam' ? 'יזם' : 'רגיל', x.e.client || '', x.e.name, x.e.owner || '',
+      pad2(x.row.month) + '/' + x.row.year, x.row.orderNo || '', x.row.dealNo || '', x.row.taxReceiptNo || '',
+      x.e.type === 'mod' ? hoursToHHMM(x.row.hours) : '', repPreVat(x), r2(nz(x.c.total) - repPreVat(x)),
+      nz(x.c.total), nz(x.c.supplierPay), nz(x.c.atlasNet), fmtDate(x.row.submitted), fmtDate(x.c.expectedDate), fmtDate(x.c.moneyDate)]),
+    'חשבונות לפי חודש העבודה שלהם (לא לפי מועד התשלום)',
+    ['סה״כ', '', '', '', '', '', '', '', '', '', '', '', D.projTotal, D.projSup, D.projNet, '', '', '']);
+
+  add('sup', ['מס״ד', 'ענף / לקוח', 'פרויקט', 'ספק', 'חודש החשבון', '% ספק', 'תשלום לספק', 'ח.מ.ק ספק', 'תאריך תשלום', 'סטטוס'],
+    D.sup.map((x, i) => [i + 1, x.e.client || '', x.e.name, x.e.owner || x.e.name, pad2(x.row.month) + '/' + x.row.year,
+      num(x.row.supplierPct) === null ? '' : num(x.row.supplierPct), nz(x.c.supplierPay), x.row.supplierDocNo || '', fmtDate(x.d), x.row.supplierPaid ? 'שולם' : 'טרם שולם']),
+    'תשלומים לספקים שתאריך התשלום שלהם בתקופה' + (D.owed.length ? ' · בנוסף ' + D.owed.length + ' תשלומים פתוחים שהכסף עבורם כבר התקבל (' + fmtMoney(D.owedSum) + ' ₪)' : ''),
+    repTotal(new Array(10).fill(''), D.sup.map(x => ['', '', '', '', '', '', nz(x.c.supplierPay), '', '', '']), [6]));
+
+  const opsSec = (key, q, note) => {
+    if (!q.t) { add(key, ['—'], [], note); return; }
+    const x = exportRows(q.t, q.items);
+    add(key, x.head, x.body, note, repTotal(x.head, x.body, repNumCols(q.t)));
+  };
+  opsSec('sal', D.salQ, 'משכורות לפי חודש העבודה · עלות מעסיק כוללת ' + fmtMoney(D.salCost) + ' ₪');
+  opsSec('pen', D.penQ, 'הפקדות לקופות לפי חודש העבודה');
+  opsSec('auth', D.authQ, 'תשלומים לרשויות לפי תאריך תשלום / יעד');
+  opsSec('cc', D.ccQ, 'עסקאות אשראי לפי תאריך העסקה · נטו ' + fmtMoney(D.ccSum) + ' ₪');
+  opsSec('bank', D.bankQ, 'תנועות הבנק בתקופה');
+
+  add('collect', ['סטטוס', 'סוג', 'ענף / לקוח', 'פרויקט', 'אחראי', 'חודש', 'ח. עסקה', 'הוגש', 'ימים מההגשה', 'צפי קבלת כסף', 'כולל מע״מ', 'לספק', 'נטו לאטלס'],
+    D.coll.map(r => [r.status + (r.lateDays ? ' · ' + r.lateDays + ' ימים' : ''), r.typeLabel, r.client, r.project, r.owner, r.month, r.deal,
+      fmtDate(r.submitted), r.age === null ? '' : r.age, fmtDate(r.exp), r.total, r.sup, r.net]),
+    'כל החשבונות שטרם התקבל עבורם כסף – נכון ליום הפקת הדוח (' + fmtDate(D.today) + ')',
+    repTotal(new Array(13).fill(''), D.coll.map(r => ['', '', '', '', '', '', '', '', '', '', r.total, r.sup, r.net]), [10, 11, 12]));
+
+  add('billing', ['מס״ד', 'ענף / לקוח', 'פרויקט', 'אחראי', 'הזמנה', 'שלב 1 – שעות / סכום', 'שלב 2 – ח. עסקה', 'שלב 3 – הוגש', 'סכום החשבון', 'צפי קבלת כסף', 'סטטוס'],
+    D.billRows.map((r, i) => [i + 1, r.client, r.name, r.owner, r.orderNo, r.st.val[0] || (r.st.done[0] ? '✓' : ''), r.st.val[1], r.st.val[2],
+      r.amount || '', fmtDate(r.exp), r.skipped ? 'אין חשבון החודש' : r.done ? 'הוגש' : 'פתוח – ' + (BILL_STAGES[r.type] || BILL_STAGES.yazam)[r.step].label]),
+    'מחזור החיוב של ' + monthName(R.ym) + ' · יעד הגשה ' + fmtDate(D.bill.due) + ' · הוגשו ' + D.bill.done.length + ' מתוך ' + D.bill.act.length);
+
+  add('orders', ['מס״ד', 'מספר הזמנה', 'ענף', 'ספק / עובד', 'היקף ההזמנה', 'ניצול', 'יתרת ההזמנה', 'תוקף – התחלה', 'תוקף – סוף', 'ימים שנותרו'],
+    D.ords.map((r, i) => [i + 1, r.no, r.client, r.supplier, r.s.ceiling === null ? '' : r.s.ceiling, r.s.used, r.s.left === null ? '' : r.s.left,
+      fmtDate(r.from), fmtDate(r.until), !r.defined ? 'לא הוגדרה' : r.s.daysLeft === null ? '' : r.s.daysLeft]),
+    'מצב ההזמנות נכון ליום הפקת הדוח · סכומים ללא מע״מ');
+
+  add('partners', ['שותף', 'סוג התנועה', 'חודש', 'תאריך', 'עלות לחברה', 'שיוך', 'נספר לשותף'],
+    P ? P.rows.map(x => [x.p.p.name, x.it.kindLabel || x.it.type || '', x.it.month || '', fmtDate(x.it.date), r2(x.it.cost),
+      (x.it.pct === 100 ? '100%' : nz(x.it.pct) + '%'), x.it.skipped ? 'לא נספר' : r2(x.it.counted)]) : [],
+    P ? 'משיכות בתקופה · ' + P.names.map((n, i) => n + ' ' + fmtMoney(P.vals[i])).join(' · ') + ' · פער מצטבר לסוף השנה: ' + P.names.map((n, i) => n + ' ' + fmtMoney(P.gaps[i])).join(' · ') : 'לא הוגדרו שותפים',
+    P ? repTotal(new Array(7).fill(''), P.rows.map(x => ['', '', '', '', r2(x.it.cost), '', x.it.skipped ? 0 : r2(x.it.counted)]), [4, 6]) : null);
+
+  /* פרויקטים נבחרים – חוצץ שלם לכל פרויקט */
+  if (ents) {
+    for (const id of ents) {
+      const t = tabInfo(id); if (!t) continue;
+      const items = t.rows.filter(r => { const y = repYMof(r); return !y || (y >= R.from.slice(0, 7) && y <= R.to.slice(0, 7)); }).map(row => ({ row, c: calcRow(t.kind, row) }));
+      const x = exportRows(t, items);
+      secs.push({ key: 'ent:' + id, title: t.name, head: x.head, body: x.body, on: true,
+        note: 'כל שורות החוצץ בתקופה · ' + (t.entity.client ? 'לקוח: ' + t.entity.client + ' · ' : '') + (t.entity.owner ? 'אחראי: ' + t.entity.owner : ''),
+        tot: repTotal(x.head, x.body, repNumCols(t)) });
+    }
+  }
+  return { secs, D, P };
+}
+
+/* ---------- תקציר מנהלים – עמוד אחד ---------- */
+function repTrendSVG(tr) {
+  const W = 760, H = 240, padT = 18, padB = 34, padL = 8, padR = 8;
+  const max = Math.max(1, ...tr.map(x => Math.max(x.inc, x.exp)));
+  const bw = (W - padL - padR) / tr.length, y = v => padT + (H - padT - padB) * (1 - v / max);
+  let g = '';
+  for (let i = 0; i <= 3; i++) { const yy = padT + (H - padT - padB) * i / 3; g += '<line x1="' + padL + '" x2="' + (W - padR) + '" y1="' + yy + '" y2="' + yy + '" stroke="#e9eaef"/>'; }
+  tr.forEach((x, i) => {
+    const x0 = W - padR - (i + 1) * bw, inner = bw * 0.56, each = inner / 2, cx = x0 + bw / 2;
+    [['inc', '#1e7d3a'], ['exp', '#c62828']].forEach(([k, col], j) => {
+      const v = x[k], hgt = Math.max(1.5, (H - padT - padB) * (v / max));
+      g += '<rect x="' + (cx - inner / 2 + j * each) + '" y="' + y(v) + '" width="' + (each - 4) + '" height="' + hgt + '" fill="' + col + '" rx="3"/>';
+    });
+    g += '<text x="' + cx + '" y="' + (H - padB + 15) + '" font-size="12" text-anchor="middle" fill="#3a4257" font-weight="600">' + x.m.slice(5) + '/' + x.m.slice(2, 4) + '</text>';
+    g += '<text x="' + cx + '" y="' + (H - padB + 29) + '" font-size="11" text-anchor="middle" fill="' + (x.net < 0 ? '#c62828' : '#1e7d3a') + '" font-weight="700">' + (x.net < 0 ? '−' : '+') + fmtMoney(Math.abs(r2(x.net / 1000))) + 'K</text>';
+  });
+  return '<svg viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none" style="width:100%;height:100%">' + g + '</svg>';
+}
+function repExecHTML(R, forPrint) {
+  const D = repData(R, null), tr = repTrend(R, 6), P = repPartners(R);
+  const M = v => fmtMoney(v);
+  const card = (cls, inner) => '<div class="c ' + cls + '">' + inner + '</div>';
+  const big = (label, val, sub, cls) => '<div class="l">' + esc(label) + '</div><div class="v ' + (cls || '') + '">' + val + '</div>' + (sub ? '<div class="s">' + sub + '</div>' : '');
+  const projBal = r2(D.bank + D.fcIn - D.fcOut);
+  let h = '<div class="page"><header><div class="brand">ATLAS<small>ב.ד. אטלס הנדסה וניהול פרויקטים · ח.פ. 516797214</small></div>' +
+    '<div class="ttl">תקציר מנהלים<b>' + esc(R.label) + '</b></div>' +
+    '<div class="dt">הופק ' + fmtDate(D.today) + '</div></header><div class="bento">';
+  h += card('a-bal', big('יתרה בעו״ש היום', M(D.bank) + '<span class="u">₪</span>', '') +
+    '<div class="row2"><div><span>פיקדון</span><b>' + M(D.dep) + '</b></div><div><span>סה״כ בבנק</span><b>' + M(r2(D.bank + D.dep)) + '</b></div></div>');
+  h += card('a-inc', big('הכנסות בתקופה', M(D.inc), '', 'gr'));
+  h += card('a-exp', big('הוצאות בתקופה', M(D.exp), '', 'rd'));
+  h += card('a-net', big('נטו תזרימי', (D.net < 0 ? '−' : '') + M(Math.abs(D.net)), '', D.net < 0 ? 'rd' : 'gd'));
+  h += card('a-ch', '<div class="l">מגמת 6 החודשים האחרונים</div><div class="chart">' + repTrendSVG(tr) + '</div>' +
+    '<div class="lg"><span><i style="background:#1e7d3a"></i>הכנסות</span><span><i style="background:#c62828"></i>הוצאות</span><span class="muted">מתחת לכל חודש – הנטו שלו</span></div>');
+  h += card('a-col', big('גבייה פתוחה', M(D.collSum), '') +
+    '<div class="row2"><div class="rd"><span>מתוכה באיחור</span><b>' + M(D.collLate) + '</b></div><div><span>חשבונות</span><b>' + D.coll.length + (D.collLateN ? ' · ' + D.collLateN + ' באיחור' : '') + '</b></div></div>');
+  h += card('a-op', '<div class="row2 tall"><div><span>יתרת פתיחה</span><b>' + M(D.openBal) + '</b></div><div><span>יתרת סגירה</span><b>' + M(D.closeBal) + '</b></div></div>');
+  h += card('a-pj', big('חשבונות שהופקו', D.proj.length + '<span class="u">חשבונות</span>', '') +
+    '<div class="row2"><div><span>היקף כולל מע״מ</span><b>' + M(D.projTotal) + '</b></div><div class="gr"><span>נטו לאטלס</span><b>' + M(D.projNet) + '</b></div></div>');
+  h += card('a-bill', big('הגשות ' + monthName(R.ym), D.bill.done.length + '<span class="u">מתוך ' + D.bill.act.length + '</span>', '',
+    D.bill.open.length ? 'rd' : 'gr') + '<div class="bar"><i style="width:' + (D.bill.act.length ? Math.round(D.bill.done.length / D.bill.act.length * 100) : 100) + '%"></i></div>' +
+    '<div class="s">' + (D.bill.open.length ? D.bill.open.length + ' חשבונות טרם הוגשו · יעד ' + fmtDate(D.bill.due) : 'כל החשבונות הוגשו') + '</div>');
+  h += card('a-cost', '<div class="l">עלויות התקופה</div><div class="row4">' +
+    '<div><span>עלות שכר</span><b>' + M(D.salCost) + '</b></div>' +
+    '<div><span>קופות ופנסיה</span><b>' + M(D.penSum) + '</b></div>' +
+    '<div><span>רשויות</span><b>' + M(D.authSum) + '</b></div>' +
+    '<div><span>אשראי</span><b>' + M(D.ccSum) + '</b></div>' +
+    '<div><span>תשלומים לספקים</span><b>' + M(D.supPaid) + '</b></div>' +
+    '<div><span>חוב לספקים</span><b class="' + (D.owedSum ? 'rd' : '') + '">' + M(D.owedSum) + '</b></div></div>');
+  h += card('a-fc', big('יתרה צפויה בעוד 30 יום', (projBal < 0 ? '−' : '') + M(Math.abs(projBal)), '', projBal < 0 ? 'rd' : 'gd') +
+    '<div class="row2"><div class="gr"><span>צפי הכנסות</span><b>' + M(D.fcIn) + '</b></div><div class="rd"><span>צפי הוצאות</span><b>' + M(D.fcOut) + '</b></div></div>');
+  if (P) {
+    h += card('a-prt', '<div class="l">שותפים – משיכות בתקופה ואיזון</div><div class="row4">' +
+      P.names.map((n, i) => '<div><span>' + esc(n) + ' – בתקופה</span><b>' + M(P.vals[i]) + '</b></div>').join('') +
+      P.names.map((n, i) => '<div><span>' + esc(n) + ' – פער מצטבר</span><b class="' + (P.gaps[i] > 1 ? 'rd' : P.gaps[i] < -1 ? 'gr' : '') + '">' + (P.gaps[i] > 0 ? '+' : '') + M(P.gaps[i]) + '</b></div>').join('') +
+      '</div><div class="s">' + (P.need.every(v => v < 1) ? 'השותפים מאוזנים' : P.names.map((n, i) => P.need[i] >= 1 ? n + ' זכאי למשוך ' + M(P.need[i]) + ' ₪' : '').filter(Boolean).join(' · ')) + '</div>');
+  }
+  h += '</div></div>';
+  const css = '*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,Helvetica,sans-serif;background:#eceef2;color:#14213d;direction:rtl}' +
+    '.page{width:' + (forPrint ? '281mm' : '1120px') + ';height:' + (forPrint ? '194mm' : '772px') + ';padding:' + (forPrint ? '3mm' : '14px') + ';display:flex;flex-direction:column;gap:7px;background:#eceef2}' +
+    'header{display:flex;align-items:flex-end;gap:14px;padding:0 4px 2px}' +
+    '.brand{font-size:23px;font-weight:800;letter-spacing:3px;display:flex;flex-direction:column}' +
+    '.brand small{font-size:9.5px;font-weight:600;letter-spacing:0;color:#5d6478;margin-top:1px}' +
+    '.ttl{font-size:15px;color:#5d6478;display:flex;gap:7px;align-items:baseline;margin-inline-start:auto}.ttl b{font-size:20px;color:#14213d}' +
+    '.dt{font-size:10px;color:#7b8196}' +
+    '.bento{flex:1;display:grid;gap:7px;grid-template-columns:repeat(12,1fr);grid-template-rows:1.25fr 1fr 1fr 1fr 1.15fr;' +
+    'grid-template-areas:"bal bal bal inc inc inc exp exp exp net net net" "bal bal bal ch ch ch ch ch ch col col col" "op op op ch ch ch ch ch ch col col col" "pj pj pj ch ch ch ch ch ch bill bill bill" "cost cost cost cost cost cost fc fc fc prt prt prt"}' +
+    '.a-bal{grid-area:bal}.a-inc{grid-area:inc}.a-exp{grid-area:exp}.a-net{grid-area:net}.a-ch{grid-area:ch}.a-col{grid-area:col}' +
+    '.a-op{grid-area:op}.a-pj{grid-area:pj}.a-bill{grid-area:bill}.a-cost{grid-area:cost}.a-fc{grid-area:fc}.a-prt{grid-area:prt}' +
+    '.c{background:#fff;border:1px solid #e3e5ec;border-radius:13px;padding:8px 11px;display:flex;flex-direction:column;justify-content:center;overflow:hidden;-webkit-print-color-adjust:exact;print-color-adjust:exact}' +
+    '.a-bal{border:2px solid #c9a227}.a-ch{justify-content:flex-start}' +
+    '.c .l{font-size:10.5px;color:#6b7385;font-weight:600;margin-bottom:2px}' +
+    '.c .v{font-size:27px;font-weight:800;line-height:1.05;direction:ltr;text-align:right}' +
+    '.a-bal .v{font-size:33px}.c .v .u{font-size:12px;font-weight:700;color:#8a90a2;margin-inline-start:4px}' +
+    '.c .v.gr{color:#1e7d3a}.c .v.rd{color:#c62828}.c .v.gd{color:#b0891f}' +
+    '.c .s{font-size:9.5px;color:#6b7385;margin-top:3px;font-weight:600}' +
+    '.row2,.row4{display:grid;gap:3px 10px;margin-top:5px;border-top:1px solid #edeef3;padding-top:4px}' +
+    '.row2{grid-template-columns:1fr 1fr}.row4{grid-template-columns:repeat(3,1fr)}.row2.tall{margin:0;border:0;padding:0}' +
+    '.row2 div,.row4 div{display:flex;flex-direction:column}' +
+    '.row2 span,.row4 span{font-size:9px;color:#7b8196;font-weight:600}' +
+    '.row2 b,.row4 b{font-size:14px;direction:ltr;text-align:right}.row2.tall b{font-size:19px}' +
+    '.row2 .rd b,.row4 .rd b,b.rd{color:#c62828}.row2 .gr b,.row4 .gr b,b.gr{color:#1e7d3a}' +
+    '.chart{flex:1;min-height:0;margin-top:2px}' +
+    '.lg{display:flex;gap:11px;font-size:9px;color:#6b7385;font-weight:600;align-items:center;margin-top:2px}' +
+    '.lg i{width:8px;height:8px;border-radius:2px;display:inline-block;margin-inline-end:3px}.lg .muted{color:#9aa0b0;font-weight:500}' +
+    '.bar{height:5px;border-radius:4px;background:#e9eaef;overflow:hidden;margin-top:5px}.bar i{display:block;height:100%;background:#1e7d3a}' +
+    (forPrint ? '@page{size:A4 landscape;margin:5mm}html,body,.page{-webkit-print-color-adjust:exact;print-color-adjust:exact}' : '');
+  return '<!DOCTYPE html><html lang="he" dir="rtl"><head><meta charset="utf-8"><title>ATLAS · תקציר מנהלים · ' + esc(R.label) + '</title><style>' + css + '</style></head><body>' + h + '</body></html>';
+}
+
+/* ---------- הצגה והדפסה ---------- */
+function repPrintHTML(html, note) {
+  const ifr = document.createElement('iframe');
+  ifr.style.cssText = 'position:fixed;left:-9999px;width:1400px;height:900px';
+  document.body.appendChild(ifr);
+  ifr.contentDocument.open(); ifr.contentDocument.write(html); ifr.contentDocument.close();
+  setTimeout(() => { try { ifr.contentWindow.focus(); ifr.contentWindow.print(); } catch (e) { toast('הדפסה נכשלה: ' + e.message, 'err'); } setTimeout(() => ifr.remove(), 60000); }, 450);
+  toast(note || 'נפתח חלון הדפסה – בחר ״שמירה כ-PDF״', 'info', 6000);
+}
+function repShowExec(R) {
+  closeModal();
+  const wrap = document.createElement('div');
+  wrap.id = 'repView';
+  wrap.innerHTML = '<div class="rv-bar"><b>תקציר מנהלים · ' + esc(R.label) + '</b><span class="grow"></span>' +
+    '<button class="btn sm primary" data-rv="pdf">📕 שמירה כ-PDF</button><button class="btn sm" data-rv="x">✖ סגירה</button></div>' +
+    '<div class="rv-body"><iframe></iframe></div>';
+  document.body.appendChild(wrap);
+  const ifr = $('iframe', wrap);
+  ifr.contentDocument.open(); ifr.contentDocument.write(repExecHTML(R, false)); ifr.contentDocument.close();
+  wrap.addEventListener('click', e => {
+    const b = e.target.closest('[data-rv]'); if (!b) return;
+    if (b.dataset.rv === 'x') wrap.remove();
+    else repPrintHTML(repExecHTML(R, true), 'נפתח חלון הדפסה – בחר ״שמירה כ-PDF״ · עמוד אחד, A4 לרוחב');
+  });
+}
+function repFileName(R, kind) {
+  const nm = { cf: 'תזרים', full: 'דוח_מלא', exec: 'תקציר_מנהלים', proj: 'פרויקטים' }[kind] || 'דוח';
+  return 'ATLAS_' + nm + '_' + String(R.label).replace(/[ \/:*?"<>|]/g, '_');
+}
+function repSheet(title, used) { let n = title.replace(/[\\\/\?\*\[\]:]/g, ' ').slice(0, 28), i = 2; while (used[n]) n = (title.slice(0, 25) + ' ' + i++); used[n] = 1; return n; }
+function repExcel() {
+  const U = repUI(), R = repRange(), built = repBuild(R, repEnts());
+  const secs = built.secs.filter(s => s.on);
+  if (!secs.length) { toast('לא נבחר אף נושא לדוח', 'warn'); return; }
+  if (!window.XLSX) {
+    const csv = secs.map(s => ['### ' + s.title, s.note, s.head.join(','), ...s.body.map(r => r.map(x => '"' + String(x == null ? '' : x).replace(/"/g, '""') + '"').join(',')), ''].join('\r\n')).join('\r\n');
+    download(repFileName(R, U.kind) + '.csv', '﻿' + csv, 'text/csv');
+    toast('ספריית Excel לא נטענה – הופק קובץ CSV מרוכז', 'warn', 6000);
+    return;
+  }
+  const wb = XLSX.utils.book_new(); wb.Workbook = { Views: [{ RTL: true }] };
+  const used = {};
+  if (secs.length > 1) {
+    const toc = [['ATLAS · ' + REP_KINDS[U.kind].label + ' · ' + R.label], ['ח.פ. 516797214 · מספר ספק (מ.ס.) 11027652'], ['הופק ' + fmtDate(todayISO())], [],
+    ['#', 'נושא', 'שורות']].concat(secs.map((s, i) => [i + 1, s.title, s.body.length]));
+    const wsT = XLSX.utils.aoa_to_sheet(toc); wsT['!cols'] = [{ wch: 6 }, { wch: 34 }, { wch: 10 }];
+    XLSX.utils.book_append_sheet(wb, wsT, repSheet('תוכן הדוח', used));
+  }
+  if (U.kind === 'exec') {
+    const tr = repTrend(R, 6);
+    const aoa = [['ATLAS · מגמת 6 חודשים'], [], ['חודש', 'הכנסות', 'הוצאות', 'נטו']].concat(tr.map(x => [monthName(x.m), x.inc, x.exp, x.net]));
+    const ws = XLSX.utils.aoa_to_sheet(aoa); ws['!cols'] = [{ wch: 16 }, { wch: 14 }, { wch: 14 }, { wch: 14 }];
+    XLSX.utils.book_append_sheet(wb, ws, repSheet('מגמת חודשים', used));
+  }
+  secs.forEach(s => {
+    const aoa = [['ATLAS · ' + s.title + ' · ' + R.label]];
+    if (s.note) aoa.push([s.note]);
+    aoa.push([]); aoa.push(s.head);
+    s.body.forEach(r => aoa.push(r));
+    if (!s.body.length) aoa.push(['אין נתונים בתקופה זו']);
+    if (s.tot) aoa.push(s.tot);
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    ws['!cols'] = s.head.map(hh => ({ wch: Math.max(11, Math.min(34, String(hh).length + 6)) }));
+    XLSX.utils.book_append_sheet(wb, ws, repSheet(s.title, used));
+  });
+  XLSX.writeFile(wb, repFileName(R, U.kind) + '.xlsx');
+  closeModal();
+  toast('הופק Excel · ' + wb.SheetNames.length + ' גיליונות', 'ok', 5000);
+}
+function repPDF() {
+  const U = repUI(), R = repRange();
+  if (U.kind === 'exec') { closeModal(); repPrintHTML(repExecHTML(R, true), 'נפתח חלון הדפסה – בחר ״שמירה כ-PDF״ · עמוד אחד, A4 לרוחב'); return; }
+  const built = repBuild(R, repEnts());
+  const secs = built.secs.filter(s => s.on);
+  if (!secs.length) { toast('לא נבחר אף נושא לדוח', 'warn'); return; }
+  const cell = (x, i, head) => typeof x === 'number' ? '<td class="n">' + repFmt(x, head && head[i]) + '</td>' : '<td>' + esc(x == null ? '' : x) + '</td>';
+  const secHTML = (s, i) => {
+    const fs = s.head.length > 16 ? 6.5 : s.head.length > 12 ? 7.5 : s.head.length > 8 ? 8.5 : 10;
+    let h = '<section' + (i ? ' class="brk"' : '') + '><h2>' + (i + 1) + '. ' + esc(s.title) + '</h2>' + (s.note ? '<div class="note">' + esc(s.note) + '</div>' : '');
+    if (!s.body.length) return h + '<div class="empty">אין נתונים בתקופה זו</div></section>';
+    h += '<table style="font-size:' + fs + 'px"><thead><tr>' + s.head.map(x => '<th>' + esc(x) + '</th>').join('') + '</tr></thead><tbody>' +
+      s.body.map(r => '<tr>' + r.map((x, j) => cell(x, j, s.head)).join('') + '</tr>').join('') +
+      (s.tot ? '<tr class="tot">' + s.tot.map((x, j) => cell(x, j, s.head)).join('') + '</tr>' : '') + '</tbody></table>';
+    return h + '</section>';
+  };
+  const sum = secs.find(s => s.key === 'sum');
+  const cover = secs.length > 1 ? '<div class="cover"><div class="logo">ATLAS</div><div class="co">ב.ד. אטלס הנדסה וניהול פרויקטים בע״מ</div>' +
+    '<div class="ids">ח.פ. 516797214 · מספר ספק (מ.ס.) 11027652</div>' +
+    '<h1>' + esc(REP_KINDS[U.kind].label) + ' · ' + esc(R.label) + '</h1>' +
+    '<div class="meta">הופק ' + fmtDate(todayISO()) + (repEnts() ? ' · ' + repEnts().length + ' פרויקטים נבחרים' : '') + '</div>' +
+    (sum ? '<table class="kv">' + sum.body.filter(r => !/^— — —/.test(r[0])).map(r => '<tr><td>' + esc(r[0]) + '</td>' + cell(r[1], 1, sum.head) + '</tr>').join('') + '</table>' : '') +
+    '<div class="toc"><b>תוכן הדוח</b><ol>' + secs.map(s => '<li>' + esc(s.title) + ' <span class="c">(' + s.body.length + ' שורות)</span></li>').join('') + '</ol></div></div>' : '';
+  const html = '<!DOCTYPE html><html lang="he" dir="rtl"><head><meta charset="utf-8"><title>ATLAS · ' + esc(R.label) + '</title><style>' +
+    '@page{size:A4 landscape;margin:9mm}body{font-family:Arial,sans-serif;color:#111;margin:0}' +
+    'h1{font-size:25px;margin:14px 0 4px;color:#14213d}h2{font-size:14px;margin:0 0 4px;color:#14213d;border-bottom:2px solid #c9a227;padding-bottom:3px}' +
+    '.cover{page-break-after:always;padding:10mm 4mm}.logo{font-size:40px;font-weight:800;letter-spacing:5px;color:#14213d}' +
+    '.co{font-size:15px;font-weight:700;margin-top:2px}.ids{font-size:11px;color:#555;margin-bottom:6px}.meta{font-size:11px;color:#555;margin-bottom:10px}' +
+    '.cover .kv{width:62%;font-size:10.5px;margin-bottom:10px}.cover .kv td{border:1px solid #ccc;padding:3px 6px}.cover .kv tr td:first-child{background:#f4f5f9;width:62%;-webkit-print-color-adjust:exact;print-color-adjust:exact}' +
+    '.toc{font-size:11px}.toc ol{margin:4px 0;padding-inline-start:18px;columns:2}.toc .c{color:#777}' +
+    'section.brk{page-break-before:always}.note{font-size:9px;color:#555;margin-bottom:5px}.empty{font-size:10px;color:#777;padding:6px}' +
+    'table{border-collapse:collapse;width:100%}th{background:#14213d;color:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}' +
+    'th,td{border:1px solid #bbb;padding:2px 4px;text-align:right}td.n{direction:ltr;text-align:left}' +
+    'tr:nth-child(even) td{background:#f6f7fa;-webkit-print-color-adjust:exact;print-color-adjust:exact}' +
+    'tr.tot td{background:#f6ecc8;font-weight:700;-webkit-print-color-adjust:exact;print-color-adjust:exact}thead{display:table-header-group}' +
+    '</style></head><body>' + cover + secs.map(secHTML).join('') + '</body></html>';
+  closeModal();
+  repPrintHTML(html, 'נפתח חלון הדפסה – בחר ״שמירה כ-PDF״ · הדוח מוגדר לרוחב');
+}
+
+/* ---------- חלון ההגדרה ---------- */
+function repModalBody() {
+  const U = repUI(), R = repRange();
+  const built = repBuild(R, repEnts());
+  const secs = built.secs.filter(s => !String(s.key).startsWith('ent:'));
+  const on = built.secs.filter(s => s.on);
+  const rows = on.reduce((a, s) => a + s.body.length, 0);
+  let h = '<div class="rep-kinds">' + Object.keys(REP_KINDS).map(k =>
+    '<label class="rep-kind' + (U.kind === k ? ' on' : '') + '"><input type="radio" name="repkind" data-rp="kind" value="' + k + '"' + (U.kind === k ? ' checked' : '') + '>' +
+    '<b>' + esc(REP_KINDS[k].label) + '</b><span>' + esc(REP_KINDS[k].hint) + '</span></label>').join('') + '</div>';
+  if (U.kind === 'cf') h += '<div class="rep-row"><b>מקור</b><label style="font-size:13px"><input type="checkbox" data-rp="cfLive"' + (U.cfLive !== false ? ' checked' : '') + '> לפי מה שמוצג עכשיו בגיליון הראשי (תקופה + סינון פעיל)</label></div>';
+  if (!(U.kind === 'cf' && U.cfLive !== false)) h += '<div class="rep-row"><b>תקופה</b><div class="seg">' +
+    [['month', 'חודש'], ['range', 'טווח חודשים'], ['year', 'שנה'], ['all', 'כל התקופות']].map(([k, l]) =>
+      '<button type="button" class="' + (U.mode === k ? 'on' : '') + '" data-rp="mode" data-k="' + k + '">' + l + '</button>').join('') + '</div>' +
+    (U.mode === 'month' ? '<input type="month" data-rp="ym" value="' + esc(U.ym) + '" style="direction:ltr">' : '') +
+    (U.mode === 'range' ? '<input type="month" data-rp="mFrom" value="' + esc(U.mFrom) + '" style="direction:ltr"> – <input type="month" data-rp="mTo" value="' + esc(U.mTo) + '" style="direction:ltr">' : '') +
+    (U.mode === 'year' ? '<input data-rp="year" value="' + esc(U.year) + '" style="direction:ltr;width:80px">' : '') +
+    '<span class="grow"></span><span class="muted">' + esc(R.label) + '</span></div>';
+  if (U.kind === 'proj') {
+    const list = repProjects();
+    h += '<div class="rep-row col"><b>פרויקטים (' + U.ents.length + ' נבחרו)</b>' +
+      '<div class="rep-ents">' + list.map(id => '<label class="rep-pick' + (U.ents.includes(id) ? ' on' : '') + '"><input type="checkbox" data-rp="ent" data-k="' + esc(id) + '"' + (U.ents.includes(id) ? ' checked' : '') + '> ' +
+        esc(S.entities[id].name) + '<span class="muted"> · ' + esc(S.entities[id].client || '—') + '</span></label>').join('') + '</div>' +
+      '<div class="rep-mini"><button type="button" class="btn sm" data-rp="entall">בחירת הכל</button><button type="button" class="btn sm" data-rp="entnone">ניקוי</button>' +
+      '<button type="button" class="btn sm" data-rp="entmod">רק משהב״ט</button><button type="button" class="btn sm" data-rp="entyaz">רק יזם</button></div></div>';
+  }
+  if (U.kind === 'full' || U.kind === 'proj') {
+    const avail = secs.filter(s => U.kind !== 'proj' || REP_PROJ_ONLY.includes(s.key));
+    h += '<div class="rep-row col"><b>נושאים בדוח</b><div class="rep-picks">' +
+      avail.map(s => '<label class="rep-pick' + (s.on ? ' on' : '') + '"><input type="checkbox" data-rp="sec" data-k="' + s.key + '"' + (s.on ? ' checked' : '') + '> ' +
+        esc(s.title) + ' <span class="muted">(' + s.body.length + ')</span></label>').join('') + '</div></div>';
+  }
+  if (U.kind === 'exec') {
+    h += '<div class="rep-note">📄 עמוד אחד, A4 לרוחב: יתרות בבנק, הכנסות והוצאות, מגמת 6 חודשים, גבייה פתוחה, מצב ההגשות, עלויות התקופה, צפי 30 יום ואיזון השותפים. ב-Excel מופק גיליון תקציר + גיליון מגמה.</div>';
+  }
+  h += '<div class="rep-sum">' + (U.kind === 'exec' ? 'תקציר מנהלים · ' + esc(R.label) :
+    on.length + ' נושאים · ' + rows + ' שורות · ' + esc(R.label)) +
+    (U.kind === 'proj' && !U.ents.length ? ' <b style="color:var(--red)">· לא נבחרו פרויקטים – הדוח יופק על כל הפרויקטים</b>' : '') + '</div>';
+  return h;
+}
+function repRefresh(bg) { const mb = $('.mb', bg); if (mb) mb.innerHTML = repModalBody(); repSyncButtons(bg); }
+function repSyncButtons(bg) {
+  const U = repUI(), v = $('#repViewBtn', bg);
+  if (v) v.style.display = U.kind === 'exec' ? '' : 'none';
+}
+function openReportModal(fmt) {
+  const U = repUI();
+  const bg = openModal({
+    title: '📤 הפקת דוח', wide: true, body: repModalBody(),
+    buttons: [
+      { label: '📗 Excel', cls: fmt === 'xlsx' ? 'primary' : '', onClick: () => { repExcel(); return false; } },
+      { label: '📕 PDF', cls: fmt === 'pdf' ? 'primary' : '', onClick: () => { repPDF(); return false; } },
+      { label: '👁 תצוגה על המסך', id: 'repViewBtn', onClick: () => { repShowExec(repRange()); return false; } },
+      { label: 'סגירה' }
+    ],
+    onOpen: b => repSyncButtons(b)
+  });
+  bg.addEventListener('change', e => {
+    const el = e.target, k = el.dataset ? el.dataset.rp : '';
+    if (!k) return;
+    if (k === 'kind') U.kind = el.value;
+    else if (k === 'cfLive') U.cfLive = el.checked;
+    else if (k === 'ym' || k === 'mFrom' || k === 'mTo') { if (/^\d{4}-\d{2}$/.test(el.value)) U[k] = el.value; }
+    else if (k === 'year') { if (/^\d{4}$/.test(el.value)) U.year = el.value; }
+    else if (k === 'sec') { if (el.checked) delete U.off[el.dataset.k]; else U.off[el.dataset.k] = 1; }
+    else if (k === 'ent') { const id = el.dataset.k; if (el.checked) { if (!U.ents.includes(id)) U.ents.push(id); } else U.ents = U.ents.filter(x => x !== id); }
+    repRefresh(bg);
+  });
+  bg.addEventListener('click', e => {
+    const el = e.target.closest('[data-rp]'); if (!el || el.tagName === 'INPUT') return;
+    const k = el.dataset.rp;
+    if (k === 'mode') U.mode = el.dataset.k;
+    else if (k === 'entall') U.ents = repProjects().slice();
+    else if (k === 'entnone') U.ents = [];
+    else if (k === 'entmod') U.ents = repProjects().filter(id => S.entities[id].type === 'mod');
+    else if (k === 'entyaz') U.ents = repProjects().filter(id => S.entities[id].type === 'yazam');
+    else return;
+    repRefresh(bg);
+  });
+  return bg;
 }
 
 /* ---------------- init ---------------- */
