@@ -6179,9 +6179,21 @@ const SYNC_DEFAULT_CFG = {
   messagingSenderId: '668967330968',
   appId: '1:668967330968:web:eb576ebe2a242395821ced',
   measurementId: 'G-35LS7CJWJ1',
-  mode: 'open',
-  space: 'cash2027-shared'
+  mode: 'google',
+  space: 'cash2027-shared',
+  // רק כתובות הגוגל שברשימה הזו יוכלו לקרוא ולכתוב – זהה לרשימה שבכללי ה-Rules
+  allow: ['denis@atlas-bd.co.il', 'bari@atlas-bd.co.il']
 };
+/* שדרוג חד-פעמי של הגדרות שנשמרו בעבר: מרחב פתוח ← כניסה עם Google */
+function syncCfgUpgrade(cfg) {
+  if (!cfg || cfg.projectId !== SYNC_DEFAULT_CFG.projectId) return cfg;
+  if (cfg.googleFix) return cfg;
+  if ((cfg.mode || 'open') === 'open') { cfg.mode = 'google'; cfg.space = cfg.space || SYNC_DEFAULT_CFG.space; }
+  if (!Array.isArray(cfg.allow) || !cfg.allow.length) cfg.allow = SYNC_DEFAULT_CFG.allow.slice();
+  cfg.googleFix = 1;
+  try { localStorage.setItem(SYNC_CFG_KEY, JSON.stringify(cfg)); } catch (e) { }
+  return cfg;
+}
 
 const Sync = {
   cfg: null, db: null, auth: null, user: null,
@@ -6200,7 +6212,7 @@ function syncDeviceId() {
 function syncCfgLoad() {
   try {
     const s = localStorage.getItem(SYNC_CFG_KEY);
-    Sync.cfg = s === null ? SYNC_DEFAULT_CFG : JSON.parse(s);
+    Sync.cfg = s === null ? SYNC_DEFAULT_CFG : syncCfgUpgrade(JSON.parse(s));
   } catch (e) { Sync.cfg = SYNC_DEFAULT_CFG; }
   return Sync.cfg;
 }
@@ -6225,8 +6237,14 @@ function syncParseCfg(text) {
 }
 
 /* ---------- מצב עבודה: ללא התחברות (מרחב משותף) או עם משתמש וסיסמה ---------- */
-function syncMode() { return (Sync.cfg && Sync.cfg.mode === 'auth') ? 'auth' : 'open'; }
+function syncMode() { const m = Sync.cfg && Sync.cfg.mode; return (m === 'auth' || m === 'google') ? m : 'open'; }
+/* נדרשת התחברות? (אימייל-סיסמה או Google) */
+function syncAuthOn() { return syncMode() !== 'open'; }
+/* האם כל המשתמשים עובדים על אותם נתונים? ב-Google כן – זה בדיוק העניין: אותם נתונים, גישה מוגבלת */
+function syncShared() { return syncMode() !== 'auth'; }
 function syncSpace() { return (Sync.cfg && Sync.cfg.space) || 'atlas'; }
+function syncAllow() { const a = Sync.cfg && Sync.cfg.allow; return Array.isArray(a) ? a.filter(Boolean) : []; }
+function syncAllowOk(email) { const e = String(email || '').toLowerCase(); return syncAllow().some(x => String(x).toLowerCase() === e); }
 function syncNewSpace() { return 'atlas-' + Math.random().toString(36).slice(2, 8) + Math.random().toString(36).slice(2, 8); }
 
 /* ---------- פיצול המצב ליחידות סנכרון ---------- */
@@ -6281,7 +6299,7 @@ function syncSentFingerprint() {
   return syncFingerprint(Object.keys(Sync.sent).map(id => [id, Sync.sent[id]]));
 }
 function syncScope() {
-  return Sync.cfg.projectId + '|' + syncMode() + '|' + (syncMode() === 'open' ? syncSpace() : Sync.user.uid);
+  return Sync.cfg.projectId + '|' + (syncShared() ? 'shared|' + syncSpace() : 'uid|' + Sync.user.uid);
 }
 function syncBaselineLoad() {
   try {
@@ -6327,7 +6345,7 @@ async function syncLoadSdk() {
   if (window.__atlasFakeFirebase) { window.firebase = window.__atlasFakeFirebase; return; }
   if (window.firebase && window.firebase.database) return;
   await syncLoadScript('firebase-app-compat.js');
-  if (syncMode() === 'auth') await syncLoadScript('firebase-auth-compat.js');
+  if (syncAuthOn()) await syncLoadScript('firebase-auth-compat.js');
   await syncLoadScript('firebase-database-compat.js');
 }
 
@@ -6360,11 +6378,51 @@ async function syncConnect() {
     Sync.auth = firebase.auth();
     Sync.auth.onAuthStateChanged(u => {
       Sync.user = u || null;
-      if (u) syncStart().catch(e => syncSetState('err', e.message));
-      else { syncStop(); syncSetState('signin'); }
+      if (!u) { syncStop(); syncSetState('signin'); render(); return; }
+      // חסימה בצד הלקוח, בנוסף לכללים בשרת: משתמש שאינו ברשימה אינו ניגש לנתונים
+      if (syncMode() === 'google' && syncAllow().length && !syncAllowOk(u.email)) {
+        syncStop();
+        syncSetState('signin', 'הכתובת ' + (u.email || '') + ' אינה מורשית');
+        toast('הכתובת ' + (u.email || '') + ' אינה ברשימת המורשים לנתונים האלה', 'err', 8000);
+        try { Sync.auth.signOut(); } catch (e) { }
+        Sync.user = null; render();
+        return;
+      }
+      syncStart().catch(e => syncSetState('err', syncErrText(e)));
+      render();
     });
     return true;
   } catch (e) { syncSetState('err', e.message); return false; }
+}
+/* הודעת שגיאה מובנת במקום הטקסט הגולמי של Firebase */
+function syncErrText(e) {
+  const s = (e && (e.code || e.message)) ? String(e.code || '') + ' ' + String(e.message || '') : String(e || '');
+  if (/PERMISSION_DENIED|permission_denied|permission-denied/i.test(s)) return 'אין הרשאה לנתונים – יש לוודא שהכתובת מופיעה בכללי ה-Rules של הפרויקט';
+  if (/popup-blocked/i.test(s)) return 'הדפדפן חסם את חלון ההתחברות';
+  if (/popup-closed-by-user|cancelled-popup-request/i.test(s)) return 'ההתחברות בוטלה';
+  if (/unauthorized-domain/i.test(s)) return 'הדומיין של האתר לא אושר ב-Firebase → Authentication → Settings → Authorized domains';
+  if (/operation-not-allowed/i.test(s)) return 'כניסה עם Google לא הופעלה ב-Firebase → Authentication → Sign-in method';
+  if (/network-request-failed/i.test(s)) return 'אין חיבור לרשת';
+  return (e && e.message) ? e.message : String(e);
+}
+async function syncGoogleIn() {
+  if (!Sync.auth) { const ok = await syncConnect(); if (!ok) return false; }
+  if (!Sync.auth) { toast('מצב הגישה אינו ״כניסה עם Google״', 'err'); return false; }
+  try {
+    const prov = new firebase.auth.GoogleAuthProvider();
+    prov.setCustomParameters({ prompt: 'select_account' });
+    await Sync.auth.signInWithPopup(prov);
+    return true;
+  } catch (e) {
+    // דפדפנים שחוסמים חלונות קופצים (בעיקר בנייד) – מעבר להפניה מלאה
+    if (/popup-blocked|popup-closed-by-user|cancelled-popup-request|operation-not-supported/i.test(String(e.code || ''))) {
+      try { await Sync.auth.signInWithRedirect(new firebase.auth.GoogleAuthProvider()); return true; } catch (e2) { }
+    }
+    syncSetState('signin', syncErrText(e));
+    toast('ההתחברות נכשלה: ' + syncErrText(e), 'err', 8000);
+    render();
+    return false;
+  }
 }
 async function syncSignIn(email, pw, createIfMissing) {
   if (!Sync.auth) { const ok = await syncConnect(); if (!ok) return false; }
@@ -6375,7 +6433,7 @@ async function syncSignIn(email, pw, createIfMissing) {
     if (createIfMissing && /user-not-found|invalid-login|INVALID_LOGIN/i.test(e.code + ' ' + e.message)) {
       try { await Sync.auth.createUserWithEmailAndPassword(email, pw); return true; } catch (e2) { syncSetState('err', e2.message); toast('יצירת המשתמש נכשלה: ' + e2.message, 'err', 7000); return false; }
     }
-    syncSetState('err', e.message); toast('ההתחברות נכשלה: ' + e.message, 'err', 7000); return false;
+    syncSetState('signin', syncErrText(e)); toast('ההתחברות נכשלה: ' + syncErrText(e), 'err', 7000); render(); return false;
   }
 }
 async function syncSignOut() {
@@ -6385,7 +6443,7 @@ async function syncSignOut() {
   Sync.user = null; Sync.sent = {}; Sync.rev = {};
   syncSetState(Sync.cfg ? 'signin' : 'off');
 }
-function syncCol() { return Sync.db.ref('atlas/' + (syncMode() === 'open' ? syncSpace() : Sync.user.uid) + '/state'); }
+function syncCol() { return Sync.db.ref('atlas/' + (syncShared() ? syncSpace() : Sync.user.uid) + '/state'); }
 function syncStop() {
   if (Sync.unsub) { try { Sync.unsub(); } catch (e) { } Sync.unsub = null; }
   Sync.on = false;
@@ -6516,6 +6574,12 @@ async function syncPushNow(all) {
 
 /* ---------- ממשק בהגדרות ---------- */
 function syncRulesText() {
+  if (syncMode() === 'google') {
+    const list = syncAllow();
+    const cond = "auth != null && (" +
+      (list.length ? list.map(e => "auth.token.email == '" + e + "'").join(' || ') : 'false') + ")";
+    return '{\n  "rules": {\n    "atlas": {\n      "' + syncSpace() + '": {\n        ".read": "' + cond + '",\n        ".write": "' + cond + '"\n      }\n    }\n  }\n}';
+  }
   if (syncMode() === 'auth') {
     return '{\n  "rules": {\n    "atlas": {\n      "$uid": {\n        ".read": "auth != null && auth.uid === $uid",\n        ".write": "auth != null && auth.uid === $uid"\n      }\n    }\n  }\n}';
   }
@@ -6529,7 +6593,7 @@ function syncCardHTML() {
     h += '<p class="muted" style="font-size:13px;margin:0 0 8px">כרגע הנתונים נשמרים רק בדפדפן של המכשיר הזה. חיבור ל-Firebase ישמור אותם גם בענן ויציג אותם בנייד ובכל מכשיר אחר, בזמן אמת.</p>' +
       '<div class="np-grid" style="max-width:720px;margin-bottom:10px">' +
       '<label for="syncSpaceIn">מזהה מרחב הנתונים</label><div><input id="syncSpaceIn" dir="ltr" value="' + esc(space) + '"><div class="hint">הכתובת בענן: <span dir="ltr">atlas/&lt;מזהה&gt;/state</span>. בכל מכשיר נוסף מזינים בדיוק את אותו מזהה. כדאי להשאיר את המזהה האקראי – הוא מה שמונע מאחרים להגיע לנתונים כשאין סיסמה.</div></div>' +
-      '<label for="syncModeIn">אופן גישה</label><div><select id="syncModeIn"><option value="open" selected>ללא התחברות – האתר נגיש מיד</option><option value="auth">עם אימייל וסיסמה</option></select></div>' +
+      '<label for="syncModeIn">אופן גישה</label><div><select id="syncModeIn"><option value="google" selected>כניסה עם Google – נתונים משותפים, גישה רק לכתובות מורשות</option><option value="open">ללא התחברות – האתר נגיש מיד</option><option value="auth">עם אימייל וסיסמה – לכל משתמש נתונים נפרדים</option></select></div>' +
       '</div>' +
       '<div class="hint muted" style="margin-bottom:4px">מדביקים כאן את אובייקט <span dir="ltr">firebaseConfig</span> מתוך Project settings › General › Your apps › Web:</div>' +
       '<textarea id="syncCfgIn" style="width:100%;height:110px;direction:ltr;font-family:monospace;font-size:12px" placeholder="{ apiKey: &quot;...&quot;, authDomain: &quot;...&quot;, projectId: &quot;...&quot;, appId: &quot;...&quot; }"></textarea>' +
@@ -6543,34 +6607,69 @@ function syncCardHTML() {
   h += '<div class="kv" style="margin-bottom:10px">' +
     '<div>פרויקט</div><div dir="ltr">' + esc(cfg.projectId) + '</div>' +
     '<div>מצב</div><div>' + (Sync.state === 'on' ? '<span class="status yes">' + st + '</span>' : Sync.state === 'err' ? '<span class="status no">' + st + '</span>' : '<span class="status fc">' + st + '</span>') + (Sync.err ? ' <span class="muted">' + esc(Sync.err) + '</span>' : '') + '</div>' +
-    '<div>אופן גישה</div><div>' + (syncMode() === 'open' ? 'ללא התחברות' : 'אימייל וסיסמה') + '</div>' +
-    (syncMode() === 'open'
-      ? '<div>מרחב הנתונים</div><div dir="ltr">' + esc(syncSpace()) + '</div>'
-      : '<div>משתמש</div><div dir="ltr">' + (Sync.user ? esc(Sync.user.email) : '—') + '</div>') +
+    '<div>אופן גישה</div><div>' + ({ open: 'ללא התחברות', auth: 'אימייל וסיסמה', google: 'כניסה עם Google' }[syncMode()]) + '</div>' +
+    (syncShared() ? '<div>מרחב הנתונים</div><div dir="ltr">' + esc(syncSpace()) + '</div>' : '') +
+    (syncAuthOn() ? '<div>משתמש</div><div dir="ltr">' + (Sync.user ? esc(Sync.user.email) : '—') + '</div>' : '') +
+    (syncMode() === 'google' ? '<div>מורשים</div><div dir="ltr">' + (syncAllow().map(esc).join('<br>') || '<span class="muted">לא הוגדרו</span>') + '</div>' : '') +
     '<div>סונכרן לאחרונה</div><div>' + (Sync.last ? Sync.last.toLocaleString('he-IL') : '—') + '</div>' +
     '<div>מזהה מכשיר</div><div dir="ltr">' + esc(syncDeviceId()) + '</div></div>';
-  if (syncMode() === 'auth' && !Sync.user) {
+  if (syncMode() === 'google' && !Sync.user) {
+    h += '<div class="msg warn" style="margin-bottom:8px;font-size:12.5px">הנתונים בענן נגישים רק לכתובות שברשימת המורשים: <b dir="ltr">' + syncAllow().map(esc).join('</b>, <b dir="ltr">') + '</b>. אפשר להתחבר בכל אחת משתי הדרכים – הנתונים זהים.</div>' +
+      '<div class="np-grid" style="max-width:520px"><label for="syncEmail">אימייל</label><div><input id="syncEmail" type="email" dir="ltr" autocomplete="username" value="' + esc(syncAllow()[0] || '') + '"></div>' +
+      '<label for="syncPw">סיסמה</label><div><input id="syncPw" type="password" dir="ltr" autocomplete="current-password"></div></div>' +
+      '<div class="toolbar" style="margin-top:8px"><button class="btn primary" data-act="syncin">התחברות</button>' +
+      '<button class="btn" data-act="syncgoogle">או התחברות עם Google</button></div>' +
+      '<div class="toolbar"><button class="btn" data-act="syncallow">עריכת רשימת המורשים</button>' +
+      '<button class="btn danger" data-act="synccfgdel">מחיקת ההגדרות</button></div>';
+  } else if (syncMode() === 'auth' && !Sync.user) {
     h += '<div class="np-grid" style="max-width:520px"><label for="syncEmail">אימייל</label><div><input id="syncEmail" type="email" dir="ltr" autocomplete="username"></div>' +
       '<label for="syncPw">סיסמה</label><div><input id="syncPw" type="password" dir="ltr" autocomplete="current-password"></div></div>' +
       '<div class="toolbar" style="margin-top:8px"><button class="btn primary" data-act="syncin">התחברות</button><button class="btn" data-act="syncnew">משתמש חדש</button><button class="btn danger" data-act="synccfgdel">מחיקת ההגדרות</button></div>';
   } else {
     h += '<div class="toolbar"><button class="btn gold" data-act="syncnow">⟳ סנכרון עכשיו</button>' +
-      (syncMode() === 'auth' ? '<button class="btn" data-act="syncout">התנתקות</button>' : '') +
+      (syncAuthOn() ? '<button class="btn" data-act="syncout">התנתקות</button>' : '') +
+      (syncMode() === 'google' ? '<button class="btn" data-act="syncallow">רשימת המורשים</button>' : '') +
       '<button class="btn danger" data-act="synccfgdel">ניתוק המכשיר מהענן</button></div>' +
       '<div class="hint muted">כל שינוי נשמר מקומית ומיד גם בענן. שינוי שנעשה במכשיר אחר מופיע כאן תוך שניות.</div>';
   }
   h += '<details style="margin-top:8px"><summary class="muted" style="font-size:12.5px;cursor:pointer">כללי האבטחה (Rules) לפרויקט הזה</summary><pre class="sync-rules" dir="ltr">' + esc(syncRulesText()) + '</pre></details>';
   return h + '</div>';
 }
+function openSyncAllowModal() {
+  const cur = syncAllow().join('\n');
+  openModal({
+    title: 'כתובות Google המורשות לנתונים', wide: false,
+    body: '<p style="margin:0 0 8px">כתובת אחת בכל שורה. רק הכתובות האלה יוכלו לקרוא ולכתוב את נתוני התזרים.</p>' +
+      '<textarea id="syncAllowIn" style="width:100%;height:110px;direction:ltr;font-family:monospace;font-size:13px">' + esc(cur) + '</textarea>' +
+      '<div class="hint muted" style="margin-top:6px">אחרי השמירה יש להעתיק את כללי ה-Rules המעודכנים (מוצגים בכרטיס הסנכרון) ולהדביק אותם ב-Firebase → Realtime Database → Rules → Publish. בלי זה השינוי לא תקף בשרת.</div>',
+    buttons: [{
+      label: 'שמירה', cls: 'primary', onClick: () => {
+        const list = String(($('#syncAllowIn') || {}).value || '').split(/[\n,; ]+/).map(x => x.trim()).filter(Boolean);
+        const bad = list.filter(x => !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(x));
+        if (bad.length) { toast('כתובת לא תקינה: ' + bad[0], 'err', 6000); return false; }
+        if (!list.length) { toast('יש להזין לפחות כתובת אחת', 'err'); return false; }
+        const cfg = Object.assign({}, Sync.cfg || syncCfgLoad(), { allow: list });
+        syncCfgSave(cfg);
+        render();
+        toast('הרשימה נשמרה – כעת יש להדביק את הכללים המעודכנים ב-Firebase', 'ok', 7000);
+      }
+    }, { label: 'ביטול' }]
+  });
+}
 function syncAction(act, el) {
   switch (act) {
+    case 'syncgoogle': syncGoogleIn(); return true;
+    case 'syncallow': openSyncAllowModal(); return true;
     case 'synccfg': {
       const cfg = syncParseCfg($('#syncCfgIn').value);
       if (!cfg) { toast('ההגדרות אינן תקינות – יש להדביק את אובייקט firebaseConfig המלא', 'err', 6000); return true; }
       const sp = (($('#syncSpaceIn') || {}).value || '').trim();
       if (!/^[A-Za-z0-9_-]{3,60}$/.test(sp)) { toast('מזהה המרחב חייב להיות 3-60 תווים באנגלית, ספרות, מקף או קו תחתון', 'err', 6000); return true; }
       cfg.space = sp;
-      cfg.mode = (($('#syncModeIn') || {}).value === 'auth') ? 'auth' : 'open';
+      const md = (($('#syncModeIn') || {}).value || 'google');
+      cfg.mode = ['open', 'auth', 'google'].includes(md) ? md : 'google';
+      if (cfg.mode === 'google') cfg.allow = syncAllow().length ? syncAllow() : SYNC_DEFAULT_CFG.allow.slice();
+      cfg.googleFix = 1;
       syncCfgSave(cfg);
       toast('ההגדרות נשמרו – מתחבר…', 'ok');
       syncConnect().then(() => render());
@@ -6585,7 +6684,7 @@ function syncAction(act, el) {
       const email = ($('#syncEmail') || {}).value, pw = ($('#syncPw') || {}).value;
       if (!email || !pw) { toast('יש להזין אימייל וסיסמה', 'err'); return true; }
       if (pw.length < 6) { toast('הסיסמה חייבת להיות באורך 6 תווים לפחות', 'err'); return true; }
-      syncSignIn(email.trim(), pw, act === 'syncnew').then(okv => { if (okv) toast('מחובר – מסנכרן…', 'ok'); render(); });
+      syncSignIn(email.trim(), pw, act === 'syncnew' && syncMode() !== 'google').then(okv => { if (okv) toast('מחובר – מסנכרן…', 'ok'); render(); });
       return true;
     }
     case 'syncout': syncSignOut().then(() => render()); return true;
