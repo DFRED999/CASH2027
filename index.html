@@ -3866,7 +3866,7 @@ function renderSalaries(v, t) {
   if (msgs.length) h += '<div style="display:flex;flex-direction:column;gap:6px;margin-bottom:10px">' + msgs.map(x => '<div class="msg ' + x[0] + '">' + x[1] + '</div>').join('') + '</div>';
   h += '<div class="toolbar sal-toolbar"><div class="seg sal-seg">' +
     [['month', 'תצוגה חודשית'], ['employee', 'לפי עובד'], ['year', 'סיכום שנתי']].map(([k, l]) => '<button class="' + (st.tab === k ? 'on' : '') + '" data-act="saltab" data-tab="' + k + '">' + l + '</button>').join('') +
-    '</div><button class="btn gold" data-act="saladdemp">＋ הוסף עובד חדש</button><button class="btn primary" data-act="saladdrow">＋ הוסף משכורת</button><button class="btn gold" data-act="save">💾 שמירה</button><button class="btn" data-act="salxlsx">📗 Excel</button><button class="btn" data-act="salmailcfg" title="נושא וגוף המייל שנפתח בשליחת תלוש">✉ נוסח המייל</button></div>';
+    '</div><button class="btn gold" data-act="saladdemp">＋ הוסף עובד חדש</button><button class="btn primary" data-act="saladdrow">＋ הוסף משכורת</button><button class="btn gold" data-act="save">💾 שמירה</button><button class="btn" data-act="salxlsx">📗 Excel</button><button class="btn" data-act="salemails" title="הזנת המיילים של כל העובדים במקום אחד">📇 מיילים של עובדים</button><button class="btn" data-act="salmailcfg" title="נושא וגוף המייל שנפתח בשליחת תלוש">✉ נוסח המייל</button></div>';
   h += salDropHTML(t);
   if (st.tab === 'month') h += salMonthHTML(t, st);
   else if (st.tab === 'employee') h += salEmployeeHTML(t, st);
@@ -3894,7 +3894,7 @@ function payslipBtn(t, row) {
 /* ---------- שליחת תלוש לעובד ב-Gmail ---------- */
 function slipMailCfg() {
   const c = S.settings.slipMail || (S.settings.slipMail = {});
-  if (!c.subject) c.subject = 'תלוש שכר {חודש} – ב.ד. אטלס';
+  if (!c.subject || c.subject === 'תלוש שכר {חודש} – ב.ד. אטלס') c.subject = 'תלוש שכר {חודש} – {שם מלא} – ב.ד. אטלס';
   if (!c.body) c.body = 'שלום {שם},\n\nמצורף תלוש השכר שלך לחודש {חודש}.\n\nבברכה,\nב.ד. אטלס הנדסה וניהול פרויקטים';
   if (c.account === undefined) c.account = '';
   return c;
@@ -3932,10 +3932,15 @@ function sendPayslip(t, row) {
   if (!emp) { toast('השורה לא משויכת לעובד', 'err'); return; }
   if (!findDoc(t.tabId, row.id, 'payslip')) { toast('אין תלוש מקושר לשורה הזו – גרור קודם את קובץ התלושים', 'warn', 5000); return; }
   if (!EMAIL_RE.test(String(emp.email || ''))) {
+    const list = knownEmails();
     openModal({
       title: 'כתובת מייל – ' + emp.name,
-      body: '<p>לעובד עדיין אין כתובת מייל. הכתובת תישמר בכרטיס העובד לשליחות הבאות.</p><div class="form-row"><label>אימייל</label><input id="smEmail" type="email" dir="ltr" placeholder="name@example.com"></div>',
-      onOpen: bg => $('#smEmail', bg).focus(),
+      body: '<p>לעובד עדיין אין כתובת מייל. בחר מהרשימה או הקלד כתובת חדשה – היא תישמר בכרטיס העובד לשליחות הבאות.</p>' +
+        (list.length ? '<div class="form-row"><label>בחירה מהרשימה</label><select id="smPick"><option value="">— בחר כתובת —</option>' +
+          list.map(x => '<option value="' + esc(x.email) + '">' + esc(x.label ? x.label + ' · ' + x.email : x.email) + '</option>').join('') + '</select></div>' : '') +
+        '<div class="form-row"><label>' + (list.length ? 'או כתובת חדשה' : 'אימייל') + '</label><input id="smEmail" type="email" dir="ltr" placeholder="name@example.com"></div>' +
+        '<div class="hint muted">אפשר למלא מראש את המיילים של כל העובדים במקום אחד – כפתור ״📇 מיילים של עובדים״ בחוצץ המשכורות.</div>',
+      onOpen: bg => { const sel = $('#smPick', bg); if (sel) { sel.onchange = () => { $('#smEmail', bg).value = sel.value; }; sel.focus(); } else $('#smEmail', bg).focus(); },
       buttons: [{ label: 'שמירה ושליחה', cls: 'primary', onClick: bg => {
         const v = $('#smEmail', bg).value.trim();
         if (!EMAIL_RE.test(v)) { toast('כתובת מייל לא תקינה', 'err'); return false; }
@@ -3957,6 +3962,34 @@ function sendPayslip(t, row) {
   row.slipSent = todayISO(); row.slipSentTo = emp.email;
   markDirty(); render();
 }
+/* כל כתובות המייל שכבר מוכרות במערכת – של העובדים ושל שליחות קודמות */
+function knownEmails() {
+  const m = new Map();
+  S.employees.forEach(e => { const em = String(e.email || '').trim(); if (EMAIL_RE.test(em) && !m.has(em.toLowerCase())) m.set(em.toLowerCase(), { email: em, label: e.name }); });
+  S.ops.salaries.rows.forEach(r => { const em = String(r.slipSentTo || '').trim(); if (EMAIL_RE.test(em) && !m.has(em.toLowerCase())) m.set(em.toLowerCase(), { email: em, label: employeeName(r.employeeId) }); });
+  return [...m.values()].sort((a, b) => String(a.label).localeCompare(String(b.label), 'he'));
+}
+/* רשימת המיילים של כל העובדים – עריכה במקום אחד */
+function employeeEmailsModal() {
+  if (!S.employees.length) { toast('אין עדיין עובדים', 'warn'); return; }
+  const emps = S.employees.filter(e => !e.archived).slice().sort((a, b) => a.name.localeCompare(b.name, 'he'));
+  const dl = '<datalist id="empEmailList">' + knownEmails().map(x => '<option value="' + esc(x.email) + '">' + esc(x.label) + '</option>').join('') + '</datalist>';
+  openModal({
+    title: '📇 מיילים של עובדים',
+    body: dl + '<p class="muted" style="margin-top:0">ממלאים פעם אחת – ומכאן כל ״📧 שלח״ פותח מייל לכתובת הנכונה בלי להקליד.</p>' +
+      '<table class="simple"><tr><th>עובד</th><th>אימייל</th><th></th></tr>' +
+      emps.map(e => '<tr><td><b>' + esc(e.name) + '</b></td><td><input data-em="' + e.id + '" type="email" dir="ltr" list="empEmailList" value="' + esc(e.email || '') + '" placeholder="name@example.com" style="width:100%"></td>' +
+        '<td>' + (EMAIL_RE.test(String(e.email || '')) ? '<span class="status yes">✓</span>' : '<span class="status no">חסר</span>') + '</td></tr>').join('') + '</table>',
+    wide: true,
+    buttons: [{ label: 'שמירה', cls: 'primary', onClick: bg => {
+      const bad = $$('[data-em]', bg).filter(i => i.value.trim() && !EMAIL_RE.test(i.value.trim()));
+      if (bad.length) { bad[0].focus(); toast('כתובת לא תקינה: ' + bad[0].value, 'err'); return false; }
+      let n = 0;
+      $$('[data-em]', bg).forEach(i => { const e = empById(i.dataset.em); const v = i.value.trim(); if (e && (e.email || '') !== v) { e.email = v; n++; } });
+      markDirty(); render(); toast(n ? n + ' כתובות עודכנו' : 'לא היו שינויים', 'ok');
+    } }, { label: 'ביטול' }]
+  });
+}
 function slipMailSettingsModal() {
   const c = slipMailCfg();
   openModal({
@@ -3964,7 +3997,7 @@ function slipMailSettingsModal() {
     body: '<div class="form-row"><label>חשבון Gmail לשליחה (לא חובה)</label><input id="smAcc" dir="ltr" value="' + esc(c.account) + '" placeholder="denis@atlas-bd.co.il"><div class="hint">אם מחוברים לכמה חשבונות Google בדפדפן – החלון ייפתח בחשבון הזה.</div></div>' +
       '<div class="form-row"><label>נושא</label><input id="smSub" value="' + esc(c.subject) + '"></div>' +
       '<div class="form-row"><label>גוף ההודעה</label><textarea id="smBody" rows="7" style="width:100%;font-family:inherit">' + esc(c.body) + '</textarea>' +
-      '<div class="hint">אפשר להשתמש ב: {שם} – שם פרטי · {שם מלא} · {חודש} – חודש התלוש</div></div>',
+      '<div class="hint">אפשר להשתמש בנושא ובגוף ב: {שם} – שם פרטי · {שם מלא} – שם העובד המלא · {חודש} – חודש התלוש</div></div>',
     buttons: [{ label: 'שמירה', cls: 'primary', onClick: bg => {
       c.account = $('#smAcc', bg).value.trim(); c.subject = $('#smSub', bg).value.trim() || c.subject; c.body = $('#smBody', bg).value.trim() || c.body;
       markDirty(); toast('נוסח המייל נשמר', 'ok');
@@ -4063,6 +4096,7 @@ function salaryAction(act, el, e, t) {
     case 'salslip': { const row = t.rows.find(r => r.id === el.dataset.row); if (row) openDoc(t, row, 'payslip'); break; }
     case 'salsend': { const row = t.rows.find(r => r.id === el.dataset.row); if (row) sendPayslip(t, row); break; }
     case 'salmailcfg': slipMailSettingsModal(); break;
+    case 'salemails': employeeEmailsModal(); break;
     case 'salunsent': {
       const row = t.rows.find(r => r.id === el.dataset.row); if (!row) break;
       confirmModal('ביטול סימון השליחה', 'לבטל את הסימון שהתלוש של <b>' + esc(employeeName(row.employeeId)) + '</b> נשלח ב-' + fmtDate(row.slipSent) + '?', 'ביטול הסימון', () => { delete row.slipSent; delete row.slipSentTo; markDirty(); render(); });
@@ -4090,7 +4124,7 @@ function editEmployeeModal(id) {
   const emp = empById(id); if (!emp) return;
   openModal({
     title: 'פרטי עובד – ' + emp.name,
-    body: '<div class="form-row"><label>שם העובד</label><input id="eeName" value="' + esc(emp.name) + '"></div><div class="setting-grid"><div class="form-row"><label>מס׳ עובד</label><input id="eeNo" style="direction:ltr" value="' + esc(emp.empNo || '') + '"></div><div class="form-row"><label>תחילת עבודה</label><input id="eeStart" style="direction:ltr" placeholder="dd/mm/yyyy" value="' + esc(fmtDate(emp.startDate)) + '"></div></div><div class="form-row"><label>אימייל (לשליחת תלושים)</label><input id="eeEmail" type="email" dir="ltr" value="' + esc(emp.email || '') + '"></div>',
+    body: '<div class="form-row"><label>שם העובד</label><input id="eeName" value="' + esc(emp.name) + '"></div><div class="setting-grid"><div class="form-row"><label>מס׳ עובד</label><input id="eeNo" style="direction:ltr" value="' + esc(emp.empNo || '') + '"></div><div class="form-row"><label>תחילת עבודה</label><input id="eeStart" style="direction:ltr" placeholder="dd/mm/yyyy" value="' + esc(fmtDate(emp.startDate)) + '"></div></div><div class="form-row"><label>אימייל (לשליחת תלושים)</label><input id="eeEmail" type="email" dir="ltr" list="empEmailList2" value="' + esc(emp.email || '') + '"><datalist id="empEmailList2">' + knownEmails().map(x => '<option value="' + esc(x.email) + '">' + esc(x.label) + '</option>').join('') + '</datalist></div>',
     buttons: [{ label: 'שמירה', cls: 'primary', onClick: bg => {
       const n = $('#eeName', bg).value.trim(); if (!n) { toast('שם לא יכול להיות ריק', 'err'); return false; }
       const sd = parseDateInput($('#eeStart', bg).value); if (sd === null) { toast('תאריך לא תקין', 'err'); return false; }
