@@ -3373,14 +3373,15 @@ function openDeleteEntityModal(t) {
 }
 function addEmployeeModal(after) {
   openModal({
-    title: 'הוספת עובד חדש', body: '<div class="form-row"><label>שם העובד *</label><input id="empName" type="text"></div><div class="setting-grid"><div class="form-row"><label>מס׳ עובד</label><input id="empNo" type="text" style="direction:ltr"></div><div class="form-row"><label>תחילת עבודה</label><input id="empStart" type="text" placeholder="dd/mm/yyyy" style="direction:ltr"></div></div>',
+    title: 'הוספת עובד חדש', body: '<div class="form-row"><label>שם העובד *</label><input id="empName" type="text"></div><div class="setting-grid"><div class="form-row"><label>מס׳ עובד</label><input id="empNo" type="text" style="direction:ltr"></div><div class="form-row"><label>תחילת עבודה</label><input id="empStart" type="text" placeholder="dd/mm/yyyy" style="direction:ltr"></div></div><div class="form-row"><label>אימייל (לשליחת תלושים)</label><input id="empEmail" type="email" dir="ltr"></div>',
     onOpen: bg => $('#empName', bg).focus(),
     buttons: [{
       label: 'הוספה', cls: 'primary', onClick: bg => {
         const n = $('#empName', bg).value.trim(); if (!n) { toast('יש להזין שם', 'err'); return false; }
         if (S.employees.some(e => e.name === n) && !confirm('כבר קיים עובד בשם ' + n + '. להוסיף בכל זאת?')) return false;
         const sd = parseDateInput($('#empStart', bg).value); if (sd === null) { toast('תאריך תחילת עבודה לא תקין', 'err'); return false; }
-        const emp = { id: uid('emp'), name: n, empNo: $('#empNo', bg).value.trim(), startDate: sd || '' }; S.employees.push(emp); markDirty(); after && after(emp); render();
+        const em = $('#empEmail', bg).value.trim(); if (em && !EMAIL_RE.test(em)) { toast('כתובת מייל לא תקינה', 'err'); return false; }
+        const emp = { id: uid('emp'), name: n, empNo: $('#empNo', bg).value.trim(), startDate: sd || '', email: em }; S.employees.push(emp); markDirty(); after && after(emp); render();
       }
     }, { label: 'ביטול', onClick: () => { render(); } }]
   });
@@ -3865,7 +3866,7 @@ function renderSalaries(v, t) {
   if (msgs.length) h += '<div style="display:flex;flex-direction:column;gap:6px;margin-bottom:10px">' + msgs.map(x => '<div class="msg ' + x[0] + '">' + x[1] + '</div>').join('') + '</div>';
   h += '<div class="toolbar sal-toolbar"><div class="seg sal-seg">' +
     [['month', 'תצוגה חודשית'], ['employee', 'לפי עובד'], ['year', 'סיכום שנתי']].map(([k, l]) => '<button class="' + (st.tab === k ? 'on' : '') + '" data-act="saltab" data-tab="' + k + '">' + l + '</button>').join('') +
-    '</div><button class="btn gold" data-act="saladdemp">＋ הוסף עובד חדש</button><button class="btn primary" data-act="saladdrow">＋ הוסף משכורת</button><button class="btn gold" data-act="save">💾 שמירה</button><button class="btn" data-act="salxlsx">📗 Excel</button></div>';
+    '</div><button class="btn gold" data-act="saladdemp">＋ הוסף עובד חדש</button><button class="btn primary" data-act="saladdrow">＋ הוסף משכורת</button><button class="btn gold" data-act="save">💾 שמירה</button><button class="btn" data-act="salxlsx">📗 Excel</button><button class="btn" data-act="salmailcfg" title="נושא וגוף המייל שנפתח בשליחת תלוש">✉ נוסח המייל</button></div>';
   h += salDropHTML(t);
   if (st.tab === 'month') h += salMonthHTML(t, st);
   else if (st.tab === 'employee') h += salEmployeeHTML(t, st);
@@ -3883,7 +3884,92 @@ function salCellHTML(t, key, row, c) {
 }
 function payslipBtn(t, row) {
   const d = findDoc(t.tabId, row.id, 'payslip');
-  return '<td>' + (d ? '<button class="btn sm slip" data-act="salslip" data-row="' + row.id + '" title="' + esc(d.fileName) + ' · עמוד ' + (d.page || 1) + '">צפה בתלוש</button>' : '<span class="muted">—</span>') + '</td>';
+  const emp = empById(row.employeeId);
+  const sendBtn = d ? ' <button class="btn sm' + (row.slipSent ? '' : ' gold') + '" data-act="salsend" data-row="' + row.id + '" title="' + (emp && emp.email ? 'שליחה אל ' + esc(emp.email) : 'לעובד אין עדיין כתובת מייל – תתבקש להזין') + '">📧 ' + (row.slipSent ? 'שלח שוב' : 'שלח') + '</button>' : '';
+  const sent = row.slipSent
+    ? '<span class="status yes" data-act="salunsent" data-row="' + row.id + '" title="נשלח אל ' + esc(row.slipSentTo || '') + ' · לחיצה מבטלת את הסימון">✓ ' + fmtDate(row.slipSent) + '</span>'
+    : (d ? '<span class="status no">טרם נשלח</span>' : '<span class="muted">—</span>');
+  return '<td style="white-space:nowrap">' + (d ? '<button class="btn sm slip" data-act="salslip" data-row="' + row.id + '" title="' + esc(d.fileName) + ' · עמוד ' + (d.page || 1) + '">צפה בתלוש</button>' : '<span class="muted">—</span>') + sendBtn + '</td><td>' + sent + '</td>';
+}
+/* ---------- שליחת תלוש לעובד ב-Gmail ---------- */
+function slipMailCfg() {
+  const c = S.settings.slipMail || (S.settings.slipMail = {});
+  if (!c.subject) c.subject = 'תלוש שכר {חודש} – ב.ד. אטלס';
+  if (!c.body) c.body = 'שלום {שם},\n\nמצורף תלוש השכר שלך לחודש {חודש}.\n\nבברכה,\nב.ד. אטלס הנדסה וניהול פרויקטים';
+  if (c.account === undefined) c.account = '';
+  return c;
+}
+function slipMailFill(tpl, emp, row) {
+  const first = String(emp.name || '').trim().split(/\s+/)[0] || '';
+  return String(tpl).replace(/\{שם\}/g, first).replace(/\{שם מלא\}/g, emp.name || '').replace(/\{חודש\}/g, pad2(row.month) + '/' + row.year);
+}
+const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+/* קובץ התלוש של השורה: מהתיקייה המחוברת, מהסשן, ובקובץ מרוכז – רק העמוד של העובד */
+async function payslipFile(t, row) {
+  const doc = findDoc(t.tabId, row.id, 'payslip'); if (!doc) return null;
+  let f = null;
+  const srcT = docSourceTab(t, doc), dp = docPathOf(srcT, doc);
+  if (DocFS.roots.length && srcT.holder.docPath && DocFS.resolve(dp).ok) {
+    try { if (await DocFS.permission(true, DocFS.resolve(dp).root)) { UI.fsGrant = false; f = await DocFS.read(dp, doc.fileName); } } catch (e) { }
+  }
+  if (!f && sessionFiles[doc.id]) f = sessionFiles[doc.id];
+  if (!f) return null;
+  const name = 'תלוש ' + pad2(row.month) + '-' + row.year + ' - ' + (employeeName(row.employeeId) || 'עובד').replace(/[\\/<>:"|?*]/g, '_') + '.pdf';
+  if (doc.page && window.PDFLib) {
+    try {
+      const src = await window.PDFLib.PDFDocument.load(await f.arrayBuffer(), { ignoreEncryption: true });
+      if (src.getPageCount() > 1) {
+        const out = await window.PDFLib.PDFDocument.create();
+        const [pg] = await out.copyPages(src, [doc.page - 1]); out.addPage(pg);
+        return new File([await out.save()], name, { type: 'application/pdf' });
+      }
+    } catch (e) { }
+  }
+  return new File([f], name, { type: 'application/pdf' });
+}
+function sendPayslip(t, row) {
+  const emp = empById(row.employeeId);
+  if (!emp) { toast('השורה לא משויכת לעובד', 'err'); return; }
+  if (!findDoc(t.tabId, row.id, 'payslip')) { toast('אין תלוש מקושר לשורה הזו – גרור קודם את קובץ התלושים', 'warn', 5000); return; }
+  if (!EMAIL_RE.test(String(emp.email || ''))) {
+    openModal({
+      title: 'כתובת מייל – ' + emp.name,
+      body: '<p>לעובד עדיין אין כתובת מייל. הכתובת תישמר בכרטיס העובד לשליחות הבאות.</p><div class="form-row"><label>אימייל</label><input id="smEmail" type="email" dir="ltr" placeholder="name@example.com"></div>',
+      onOpen: bg => $('#smEmail', bg).focus(),
+      buttons: [{ label: 'שמירה ושליחה', cls: 'primary', onClick: bg => {
+        const v = $('#smEmail', bg).value.trim();
+        if (!EMAIL_RE.test(v)) { toast('כתובת מייל לא תקינה', 'err'); return false; }
+        emp.email = v; markDirty(); closeModal(); sendPayslip(t, row); return false;
+      } }, { label: 'ביטול' }]
+    });
+    return;
+  }
+  const cfg = slipMailCfg();
+  const url = 'https://mail.google.com/mail/' + (cfg.account ? '?authuser=' + encodeURIComponent(cfg.account) + '&' : '?') +
+    'view=cm&fs=1&to=' + encodeURIComponent(emp.email) + '&su=' + encodeURIComponent(slipMailFill(cfg.subject, emp, row)) + '&body=' + encodeURIComponent(slipMailFill(cfg.body, emp, row));
+  // החלון נפתח מיד בתגובה ללחיצה, כדי שהדפדפן לא יחסום אותו
+  const w = window.open(url, '_blank');
+  if (!w) { toast('הדפדפן חסם את חלון Gmail – אשר חלונות קופצים לאתר ולחץ שוב', 'err', 7000); return; }
+  payslipFile(t, row).then(f => {
+    if (f) { download(f.name, f); toast('התלוש ירד למחשב (' + f.name + ') – גרור אותו לחלון Gmail ושלח', 'ok', 8000); }
+    else toast('לא הצלחתי להוריד את קובץ התלוש – צרף אותו ידנית מתיקיית העובד', 'warn', 8000);
+  });
+  row.slipSent = todayISO(); row.slipSentTo = emp.email;
+  markDirty(); render();
+}
+function slipMailSettingsModal() {
+  const c = slipMailCfg();
+  openModal({
+    title: 'נוסח מייל התלוש',
+    body: '<div class="form-row"><label>חשבון Gmail לשליחה (לא חובה)</label><input id="smAcc" dir="ltr" value="' + esc(c.account) + '" placeholder="denis@atlas-bd.co.il"><div class="hint">אם מחוברים לכמה חשבונות Google בדפדפן – החלון ייפתח בחשבון הזה.</div></div>' +
+      '<div class="form-row"><label>נושא</label><input id="smSub" value="' + esc(c.subject) + '"></div>' +
+      '<div class="form-row"><label>גוף ההודעה</label><textarea id="smBody" rows="7" style="width:100%;font-family:inherit">' + esc(c.body) + '</textarea>' +
+      '<div class="hint">אפשר להשתמש ב: {שם} – שם פרטי · {שם מלא} · {חודש} – חודש התלוש</div></div>',
+    buttons: [{ label: 'שמירה', cls: 'primary', onClick: bg => {
+      c.account = $('#smAcc', bg).value.trim(); c.subject = $('#smSub', bg).value.trim() || c.subject; c.body = $('#smBody', bg).value.trim() || c.body;
+      markDirty(); toast('נוסח המייל נשמר', 'ok');
+    } }, { label: 'ביטול' }]
+  });
 }
 function salMonthHTML(t, st) {
   const ym = st.month;
@@ -3895,16 +3981,17 @@ function salMonthHTML(t, st) {
     '<div class="scard period"><div class="l">תקופה</div><div class="pnav"><button class="pbtn" data-act="salprev" title="חודש קודם">›</button><button class="pill-soft cal-open" data-act="salpickmonth">' + monthLabel(ym) + ' ▾</button><button class="pbtn" data-act="salnext" title="חודש הבא">‹</button></div></div>' +
     statCard('חודש שהוזן', lastMonth ? monthLabel(lastMonth) : '—') + statCard('עובדים עם תלוש', rows.length) +
     statCard('סה״כ נטו לחודש', money(sum(x => x.row.net))) + statCard('סה״כ ברוטו לחודש', money(sum(x => x.row.grossTotal))) +
-    statCard('שולם', money(sum(x => x.row.status ? x.row.net : 0)), 'ok') + statCard('טרם שולם', money(sum(x => x.row.status ? 0 : x.row.net)), 'bad') + '</div>';
-  h += '<div class="grid-wrap sal-grid" data-tab="ops:salaries"><table class="grid"><thead><tr><th>עובד</th><th>חודש</th><th>משכורת נטו</th><th>דמי הבראה</th><th>שי לחג</th><th>פנסיה להעברה</th><th>קרן השתלמות כולל</th><th>תאריך תשלום</th><th>סטטוס</th><th>תלוש</th><th></th></tr></thead><tbody>';
-  if (!items.length) h += '<tr><td colspan="11" class="muted" style="padding:22px;text-align:center">אין משכורות ל-' + monthLabel(ym) + '. גרור PDF של תלושים או לחץ ״＋ הוסף משכורת״.</td></tr>';
+    statCard('שולם', money(sum(x => x.row.status ? x.row.net : 0)), 'ok') + statCard('טרם שולם', money(sum(x => x.row.status ? 0 : x.row.net)), 'bad') +
+    (k => statCard('תלושים נשלחו לעובדים', items.filter(x => x.row.slipSent).length + ' / ' + k, items.filter(x => x.row.slipSent).length < k ? 'bad' : 'ok'))(items.filter(x => findDoc(t.tabId, x.row.id, 'payslip')).length) + '</div>';
+  h += '<div class="grid-wrap sal-grid" data-tab="ops:salaries"><table class="grid"><thead><tr><th>עובד</th><th>חודש</th><th>משכורת נטו</th><th>דמי הבראה</th><th>שי לחג</th><th>פנסיה להעברה</th><th>קרן השתלמות כולל</th><th>תאריך תשלום</th><th>סטטוס</th><th>תלוש</th><th>נשלח לעובד</th><th></th></tr></thead><tbody>';
+  if (!items.length) h += '<tr><td colspan="12" class="muted" style="padding:22px;text-align:center">אין משכורות ל-' + monthLabel(ym) + '. גרור PDF של תלושים או לחץ ״＋ הוסף משכורת״.</td></tr>';
   for (const { row, c } of items) {
     h += '<tr data-row="' + row.id + '"' + (UI.flashRow === row.id ? ' class="flash"' : '') + '><td><a href="#" class="emp-link" data-act="salgoemp" data-emp="' + row.employeeId + '"><b>' + esc(employeeName(row.employeeId) || '—') + '</b></a></td><td class="num">' + monthLabel(ym) + '</td>' +
       salCellHTML(t, 'net', row, c).replace('<td class="">', '<td class="netcell">') + salCellHTML(t, 'recuperation', row, c) + salCellHTML(t, 'holidayGift', row, c) +
       salCellHTML(t, 'pensionTransfer', row, c) + salCellHTML(t, 'kerenTransfer', row, c) + salCellHTML(t, 'payDate', row, c) + salCellHTML(t, 'status', row, c) +
       payslipBtn(t, row) + '<td><button class="row-del" data-act="delrow" data-row="' + row.id + '" title="מחיקת משכורת">🗑</button></td></tr>';
   }
-  if (items.length) h += '<tr class="tot-row"><td>סה״כ</td><td></td><td class="num">' + fmtMoney(sum(x => x.row.net)) + '</td><td class="num">' + fmtMoney(sum(x => x.row.recuperation)) + '</td><td class="num">' + fmtMoney(sum(x => x.row.holidayGift)) + '</td><td class="num">' + fmtMoney(sum(x => x.c.pensionTransfer)) + '</td><td class="num">' + fmtMoney(sum(x => x.c.kerenTransfer)) + '</td><td colspan="4"></td></tr>';
+  if (items.length) h += '<tr class="tot-row"><td>סה״כ</td><td></td><td class="num">' + fmtMoney(sum(x => x.row.net)) + '</td><td class="num">' + fmtMoney(sum(x => x.row.recuperation)) + '</td><td class="num">' + fmtMoney(sum(x => x.row.holidayGift)) + '</td><td class="num">' + fmtMoney(sum(x => x.c.pensionTransfer)) + '</td><td class="num">' + fmtMoney(sum(x => x.c.kerenTransfer)) + '</td><td colspan="5"></td></tr>';
   h += '</tbody></table></div>';
   const missing = S.employees.filter(e => !rows.some(r => r.employeeId === e.id));
   if (missing.length && items.length) h += '<div class="muted" style="font-size:12.5px;margin-top:6px">ללא משכורת ב-' + monthLabel(ym) + ': ' + missing.map(e => '<a href="#" data-act="saladdfor" data-emp="' + e.id + '">' + esc(e.name) + ' ＋</a>').join(' · ') + '</div>';
@@ -3924,8 +4011,8 @@ function salEmployeeHTML(t, st) {
     statCard('שעות בחודש האחרון', last && num(last.row.hours) !== null ? fmtNum(last.row.hours) : '—') + statCard('נטו בכל התקופה', money(sum(x => x.row.net))) + statCard('הפקדות לקרנות בכל התקופה', money(sum(x => x.c.funds))) + '</div>';
   h += '<div class="sal-subhead"><b>פירוט שכר חודשי – ' + esc(emp.name) + '</b><span class="grow"></span><button class="btn sm primary" data-act="saladdfor" data-emp="' + emp.id + '">＋ שורת שכר</button></div>';
   const cols = ['hours', 'hourlyRate', 'baseSalary', 'recuperation', 'holidayGift', 'travelOther', 'grossTotal', 'deductions', 'net', 'pensionTransfer', 'kerenTransfer', 'funds', 'reportDate', 'payDate', 'status'];
-  h += '<div class="grid-wrap sal-grid" data-tab="ops:salaries"><table class="grid"><thead><tr><th>חודש</th>' + cols.map(k => '<th class="' + (k === 'net' ? 'th-net' : k === 'funds' ? 'th-funds' : '') + '">' + esc(t.cols.find(c => c.key === k).label) + '</th>').join('') + '<th>תלוש</th><th>הערות</th><th></th></tr></thead><tbody>';
-  if (!items.length) h += '<tr><td colspan="' + (cols.length + 4) + '" class="muted" style="padding:22px;text-align:center">אין עדיין שורות שכר לעובד זה</td></tr>';
+  h += '<div class="grid-wrap sal-grid" data-tab="ops:salaries"><table class="grid"><thead><tr><th>חודש</th>' + cols.map(k => '<th class="' + (k === 'net' ? 'th-net' : k === 'funds' ? 'th-funds' : '') + '">' + esc(t.cols.find(c => c.key === k).label) + '</th>').join('') + '<th>תלוש</th><th>נשלח לעובד</th><th>הערות</th><th></th></tr></thead><tbody>';
+  if (!items.length) h += '<tr><td colspan="' + (cols.length + 5) + '" class="muted" style="padding:22px;text-align:center">אין עדיין שורות שכר לעובד זה</td></tr>';
   for (const { row, c } of items) {
     h += '<tr data-row="' + row.id + '"' + (UI.flashRow === row.id ? ' class="flash"' : '') + '><td class="num"><b>' + monthLabel(rowMonth(row)) + '</b></td>' +
       cols.map(k => { let cell = salCellHTML(t, k, row, c); if (k === 'net') cell = cell.replace(/^<td class="[^"]*">/, '<td class="netcell">'); if (k === 'funds') cell = cell.replace(/^<td class="[^"]*">/, '<td class="num fundcell">'); return cell; }).join('') +
@@ -3974,6 +4061,13 @@ function salaryAction(act, el, e, t) {
     case 'saladdrow': salAddRowModal(st.tab === 'employee' ? st.emp : '', st.tab === 'month' ? st.month : curMonth()); break;
     case 'saladdfor': e.preventDefault(); salAddRowModal(el.dataset.emp, st.tab === 'month' ? st.month : curMonth()); break;
     case 'salslip': { const row = t.rows.find(r => r.id === el.dataset.row); if (row) openDoc(t, row, 'payslip'); break; }
+    case 'salsend': { const row = t.rows.find(r => r.id === el.dataset.row); if (row) sendPayslip(t, row); break; }
+    case 'salmailcfg': slipMailSettingsModal(); break;
+    case 'salunsent': {
+      const row = t.rows.find(r => r.id === el.dataset.row); if (!row) break;
+      confirmModal('ביטול סימון השליחה', 'לבטל את הסימון שהתלוש של <b>' + esc(employeeName(row.employeeId)) + '</b> נשלח ב-' + fmtDate(row.slipSent) + '?', 'ביטול הסימון', () => { delete row.slipSent; delete row.slipSentTo; markDirty(); render(); });
+      break;
+    }
     case 'salpick': {
       if (e.target.closest('input,button,a')) return;
       const inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.pdf,application/pdf';
@@ -3996,11 +4090,12 @@ function editEmployeeModal(id) {
   const emp = empById(id); if (!emp) return;
   openModal({
     title: 'פרטי עובד – ' + emp.name,
-    body: '<div class="form-row"><label>שם העובד</label><input id="eeName" value="' + esc(emp.name) + '"></div><div class="setting-grid"><div class="form-row"><label>מס׳ עובד</label><input id="eeNo" style="direction:ltr" value="' + esc(emp.empNo || '') + '"></div><div class="form-row"><label>תחילת עבודה</label><input id="eeStart" style="direction:ltr" placeholder="dd/mm/yyyy" value="' + esc(fmtDate(emp.startDate)) + '"></div></div>',
+    body: '<div class="form-row"><label>שם העובד</label><input id="eeName" value="' + esc(emp.name) + '"></div><div class="setting-grid"><div class="form-row"><label>מס׳ עובד</label><input id="eeNo" style="direction:ltr" value="' + esc(emp.empNo || '') + '"></div><div class="form-row"><label>תחילת עבודה</label><input id="eeStart" style="direction:ltr" placeholder="dd/mm/yyyy" value="' + esc(fmtDate(emp.startDate)) + '"></div></div><div class="form-row"><label>אימייל (לשליחת תלושים)</label><input id="eeEmail" type="email" dir="ltr" value="' + esc(emp.email || '') + '"></div>',
     buttons: [{ label: 'שמירה', cls: 'primary', onClick: bg => {
       const n = $('#eeName', bg).value.trim(); if (!n) { toast('שם לא יכול להיות ריק', 'err'); return false; }
       const sd = parseDateInput($('#eeStart', bg).value); if (sd === null) { toast('תאריך לא תקין', 'err'); return false; }
-      emp.name = n; emp.empNo = $('#eeNo', bg).value.trim(); emp.startDate = sd || ''; markDirty(); render(); toast('פרטי העובד עודכנו', 'ok');
+      const em = $('#eeEmail', bg).value.trim(); if (em && !EMAIL_RE.test(em)) { toast('כתובת מייל לא תקינה', 'err'); return false; }
+      emp.name = n; emp.empNo = $('#eeNo', bg).value.trim(); emp.startDate = sd || ''; emp.email = em; markDirty(); render(); toast('פרטי העובד עודכנו', 'ok');
     } }, { label: 'ביטול' }]
   });
 }
@@ -5766,6 +5861,7 @@ function personEditModal(p) {
     title: 'עריכת פרטי אדם – ' + p.name,
     body: '<div class="form-row"><label>שם</label><input id="peName" value="' + esc(p.name) + '"></div>' +
       '<div class="form-row"><label>סיווג בכ״א</label><select id="peHr"><option value="salaried"' + (personHrKind(p) === 'salaried' ? ' selected' : '') + '>שכיר</option><option value="freelancer"' + (personHrKind(p) === 'freelancer' ? ' selected' : '') + '>עצמאי</option></select><div class="hint">קובע תחת איזו תת-קבוצה האדם מופיע בסרגל כ״א – שכירים או עצמאים.</div></div>' +
+      (p.empId ? '<div class="form-row"><label>אימייל (לשליחת תלושים)</label><input id="peEmail" type="email" dir="ltr" value="' + esc((empById(p.empId) || {}).email || '') + '"></div>' : '') +
       '<div class="form-row"><label>מספר עובד</label><input id="peNo" value="' + esc(p.empNo || '') + '"' + (p.empId ? '' : ' disabled placeholder="רלוונטי לעובד שכיר"') + '></div>' +
       '<div class="form-row"><label>תחילת עבודה</label>' + dateInputHTML(p.startDate || '', 'id="peStart"' + (p.empId ? '' : ' disabled')) + '</div>' +
       '<div class="form-row"><label>שמות נוספים לאותו אדם</label><textarea id="peAlias" rows="3" style="width:100%;font-family:inherit" placeholder="שם בכל שורה – לדוגמה: ברי / בארי">' + esc((p.aliases || []).join('\n')) + '</textarea><div class="hint">שמות אלה יזוהו כאותו אדם בקליטת תלושים, דוחות פנסיה ובחוצצים.</div></div>' +
@@ -5778,7 +5874,8 @@ function personEditModal(p) {
         const hrSel = $('#peHr', bg); if (hrSel) { delete hrMap()[personCanon(p.name)]; setPersonHrKind({ name: nm, empId: p.empId }, hrSel.value); }
         if (p.empId) {
           const e = S.employees.find(x => x.id === p.empId);
-          if (e) { e.name = nm; e.empNo = $('#peNo', bg).value.trim(); const d = $('#peStart', bg).value.trim(); e.startDate = d ? (parseDateInput(d) || '') : ''; }
+          const pem = ($('#peEmail', bg) || {}).value; if (pem && !EMAIL_RE.test(pem.trim())) { toast('כתובת מייל לא תקינה', 'err'); return false; }
+          if (e) { if (pem !== undefined) e.email = pem.trim(); e.name = nm; e.empNo = $('#peNo', bg).value.trim(); const d = $('#peStart', bg).value.trim(); e.startDate = d ? (parseDateInput(d) || '') : ''; }
         }
         if (p.entId && S.entities[p.entId]) { S.entities[p.entId].name = nm; S.entities[p.entId].docPath = $('#pePath', bg).value.trim(); }
         // עדכון קבוצת השמות של האדם
