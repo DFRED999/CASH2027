@@ -99,6 +99,15 @@ input,select,textarea{font-family:inherit;font-size:13px}
 .sb-group.closed > .sb-group-h .chev{transform:rotate(90deg)}
 .sb-group:not(.closed) > .sb-group-h .chev{transform:none}
 .sb-sep{border-top:1px solid var(--line);margin:10px 4px}
+.sb-top{margin-top:2px}
+.sb-group-h.sb-top-h{font-size:14.5px;font-weight:700;margin-top:4px;color:var(--navy)}
+.sb-top-h .sb-sp{flex:1}
+.sb-top-h .sb-count{margin-inline-start:4px}
+.sb-top-h .badge{margin:0}
+.sb-top > .sb-children{padding-right:10px;border-right:2px solid var(--lav2);margin:2px 12px 6px 0}
+.sb-foot{display:flex;gap:4px}
+.sb-foot .sb-item{flex:1;justify-content:center;font-size:12.5px;padding:7px 6px;color:var(--muted)}
+.sb-foot .sb-item.active{color:#fff}
 
 /* ---------- main ---------- */
 #main{margin:56px 236px 0 0;padding:16px 18px 40px;min-height:calc(100vh - 56px)}
@@ -2515,7 +2524,16 @@ function renderSidebar() {
   const sb = $('#sidebar');
   const item = (id, label, count) => '<div class="sb-item' + (UI.view === id ? ' active' : '') + '" data-nav="' + id + '">' + esc(label) + (count !== undefined ? '<span class="sb-count">' + count + '</span>' : '') + '</div>';
   let h = '<button id="btnNew">＋ חדש</button>';
-  h += item('main', '📊 גיליון ראשי – תזרים') + item('billing', '🧾 הגשות חודשיות', billingBadge() || undefined) + item('collect', '📋 דשבורד גבייה', collectRows().length || undefined) + item('orders', '📑 הזמנות משהב״ט') + item('partners', '🤝 שותפים – איזון') + item('suppliers', '🧾 ספקים – מאזן');
+  if (UI.sbTop === undefined) UI.sbTop = sbGroupOf(UI.view);
+  const topGrp = (key, label, inner, badge, count, extra) => {
+    const open = UI.sbTop === key;
+    return '<div class="sb-group sb-top' + (open ? '' : ' closed') + '"><div class="sb-group-h sb-top-h" data-top="' + key + '"><span class="chev">▼</span><span>' + label + '</span><span class="sb-sp"></span>' +
+      (badge && !open ? '<span class="badge" title="דורש טיפול">' + badge + '</span>' : '') + (count !== undefined ? '<span class="sb-count">' + count + '</span>' : '') + (extra || '') + '</div><div class="sb-children">' + inner + '</div></div>';
+  };
+  h += item('main', '📊 גיליון ראשי – תזרים') + item('alerts', '🔔 מרכז התראות', alertCount() || undefined);
+  const bb = billingBadge();
+  h += topGrp('work', '🗓 עבודה חודשית', item('billing', '🧾 הגשות חודשיות', bb || undefined) + item('collect', '📋 דשבורד גבייה', collectRows().length || undefined) + item('orders', '📑 הזמנות משהב״ט'), bb);
+  let proj = '';
   for (const type of PROJECT_TYPES) {
     const ids = S.entityOrder.filter(id => S.entities[id].type === type);
     // "פרויקטים רגילים" הוסר מהמערכת – הקבוצה מוצגת רק אם נשארו בה חוצצים מגיבוי ישן
@@ -2531,11 +2549,11 @@ function renderSidebar() {
       inner += '<div class="sb-group sb-client' + (open ? '' : ' closed') + '"><div class="sb-group-h sb-client-h" data-grp="' + esc(key) + '" title="' + esc(c || 'פרויקטים ללא לקוח') + '"><span class="chev">▼</span><span class="sb-label">' + (c ? esc(c) : '<span class="muted">ללא לקוח</span>') + '</span><span class="sb-count">' + pids.length + '</span></div><div class="sb-children">' +
         pids.map(id => item(id, S.entities[id].name, S.entities[id].rows.length)).join('') + '</div></div>';
     }
-    h += '<div class="sb-group' + (UI.sbOpen[type] ? '' : ' closed') + '" data-ptype="' + type + '"><div class="sb-group-h" data-grp="' + type + '"><span class="chev">▼</span>' + GROUP_LABEL[type] + '<span class="sb-count">' + ids.length + '</span></div><div class="sb-children">' +
+    proj += '<div class="sb-group' + (UI.sbOpen[type] ? '' : ' closed') + '" data-ptype="' + type + '"><div class="sb-group-h" data-grp="' + type + '"><span class="chev">▼</span>' + GROUP_LABEL[type] + '<span class="sb-count">' + ids.length + '</span></div><div class="sb-children">' +
       (ids.length ? inner : '<div class="sb-empty">אין עדיין – ״＋ חדש״</div>') + '</div></div>';
   }
-  h += '<div class="sb-group' + (UI.sbOpen.ops ? '' : ' closed') + '"><div class="sb-group-h" data-grp="ops"><span class="chev">▼</span>תפעול</div><div class="sb-children">' +
-    Object.keys(OPS).map(k => item('ops:' + k, OPS[k], S.ops[k].rows.length)).join('') + '</div></div>';
+  h += topGrp('proj', '📁 פרויקטים', proj, '', S.entityOrder.filter(id => PROJECT_TYPES.includes(S.entities[id].type)).length);
+  h += topGrp('ops', '⚙️ תפעול', Object.keys(OPS).map(k => item('ops:' + k, OPS[k], S.ops[k].rows.length)).join(''));
   hrSeedOnce();
   const ppl = allPeople(personState().showArchived);
   const arch = allPeople(true).filter(x => x.archived).length;
@@ -2555,12 +2573,11 @@ function renderSidebar() {
     hrInner += '<div class="sb-group sb-client' + (open ? '' : ' closed') + '"><div class="sb-group-h sb-client-h" data-grp="' + key + '" title="' + HR_KINDS[kind] + '"><span class="chev">▼</span><span class="sb-label">' + HR_KINDS[kind] + '</span><span class="sb-count">' + list.length + '</span></div><div class="sb-children">' +
       (list.length ? list.map(personItem).join('') : '<div class="sb-empty">אין</div>') + '</div></div>';
   }
-  h += '<div class="sb-group' + (UI.sbOpen.freelancer ? '' : ' closed') + '"><div class="sb-group-h" data-grp="freelancer"><span class="chev">▼</span>כ״א<span class="sb-count">' + ppl.length + '</span><button class="sb-add" data-newperson="1" title="הוספת אדם">＋</button></div><div class="sb-children">' +
-    (ppl.length ? hrInner : '<div class="sb-empty">אין עדיין – ＋ ליד הכותרת</div>') +
-    (arch ? '<div class="sb-item sb-arch" data-arch="1"><span class="muted">' + (personState().showArchived ? 'הסתרת ארכיון' : 'הצגת ארכיון (' + arch + ')') + '</span></div>' : '') +
-    '</div></div>';
-  const alN = alertCount();
-  h += '<div class="sb-sep"></div>' + item('alerts', '🔔 מרכז התראות', alN || undefined) + item('anomalies', '⚠ אנומליות') + item('settings', '⚙ הגדרות וגיבוי');
+  h += topGrp('hr', '👥 כ״א', (ppl.length ? hrInner : '<div class="sb-empty">אין עדיין – ＋ ליד הכותרת</div>') +
+    (arch ? '<div class="sb-item sb-arch" data-arch="1"><span class="muted">' + (personState().showArchived ? 'הסתרת ארכיון' : 'הצגת ארכיון (' + arch + ')') + '</span></div>' : ''),
+    '', ppl.length, '<button class="sb-add" data-newperson="1" title="הוספת אדם">＋</button>');
+  h += topGrp('an', '📈 ניתוחים', item('partners', '🤝 שותפים – איזון') + item('suppliers', '🧾 ספקים – מאזן') + item('profit', '📈 רווחיות עובדים'));
+  h += '<div class="sb-sep"></div><div class="sb-foot">' + item('settings', '⚙ הגדרות וגיבוי') + item('anomalies', '⚠ אנומליות') + '</div>';
   sb.innerHTML = h;
 }
 /* ---- מגירת תפריט בנייד ---- */
@@ -2575,6 +2592,8 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape') setDrawer(fa
 $('#sidebar').addEventListener('click', e => {
   if (e.target.closest('[data-newperson]')) { e.stopPropagation(); openNewPersonModal(); return; }
   if (e.target.closest('[data-arch]')) { personState().showArchived = !personState().showArchived; renderSidebar(); return; }
+  const tg = e.target.closest('[data-top]');
+  if (tg) { UI.sbTop = UI.sbTop === tg.dataset.top ? '' : tg.dataset.top; renderSidebar(); return; }
   const g = e.target.closest('[data-grp]');
   if (g) { UI.sbOpen[g.dataset.grp] = g.closest('.sb-group').classList.contains('closed'); renderSidebar(); return; }
   const n = e.target.closest('[data-nav]');
@@ -2582,8 +2601,18 @@ $('#sidebar').addEventListener('click', e => {
   if (e.target.id === 'btnNew') openNewEntityModal();
 });
 
+function sbGroupOf(v) {
+  v = String(v || '');
+  if (['billing', 'collect', 'orders'].includes(v)) return 'work';
+  if (['partners', 'suppliers', 'profit'].includes(v)) return 'an';
+  if (v.startsWith('ops:')) return 'ops';
+  if (v.startsWith('person:')) return 'hr';
+  const e = S.entities[v]; if (e) return e.type === 'freelancer' ? 'hr' : 'proj';
+  return '';
+}
 function clientGroupKey(type, client) { return 'c:' + type + ':' + (client || '').trim(); }
 function navigate(view, rowId) {
+  { const sg = sbGroupOf(view); if (sg) UI.sbTop = sg; }
   closePopups();
   setDrawer(false);
   // מסך קודם לכפתור "חזרה" – לא נרשם כשחוזרים אחורה ולא כשנשארים באותו מסך
@@ -2618,7 +2647,7 @@ function render() {
   const focusKey = ae && ae.dataset && ae.dataset.row ? { row: ae.dataset.row, key: ae.dataset.key } : null;
   const gw = $('.grid-wrap'); const gs = gw ? { top: gw.scrollTop, left: gw.scrollLeft, tab: gw.dataset.tab } : null;
 
-  if (!['main', 'settings', 'anomalies', 'alerts', 'partners', 'collect', 'orders', 'billing', 'suppliers'].includes(UI.view) && !String(UI.view).startsWith('person:') && !tabInfo(UI.view)) UI.view = 'main';
+  if (!['main', 'settings', 'anomalies', 'alerts', 'partners', 'collect', 'orders', 'billing', 'suppliers', 'profit'].includes(UI.view) && !String(UI.view).startsWith('person:') && !tabInfo(UI.view)) UI.view = 'main';
   if (String(UI.view).startsWith('person:') && !personByKey(personState().key)) UI.view = 'main';
   renderSidebar();
   renderTopStats();
@@ -2629,6 +2658,7 @@ function render() {
   else if (UI.view === 'anomalies') renderAnomalies(v);
   else if (UI.view === 'partners') renderPartners(v);
   else if (UI.view === 'suppliers') renderSuppliers(v);
+  else if (UI.view === 'profit') renderProfit(v);
   else if (UI.view === 'collect') renderCollect(v);
   else if (UI.view === 'orders') renderOrdersDash(v);
   else if (UI.view === 'billing') renderBilling(v);
@@ -3485,6 +3515,7 @@ $('#view').addEventListener('change', e => {
   if (UI.view === 'collect' && el.dataset && el.dataset.col) { collectChange(el); return; }
   if (UI.view === 'orders' && el.dataset && el.dataset.ord) { ordersChange(el); return; }
   if (UI.view === 'suppliers' && el.dataset && el.dataset.sup) { suppliersChange(el); return; }
+  if (UI.view === 'profit' && el.dataset && el.dataset.prof) { profUI().year = el.value; render(); return; }
   if (UI.view === 'billing' && el.dataset && el.dataset.bl) { billingChange(el); return; }
   if (UI.view === 'partners') {
     if (el.id === 'ptYear') { partnersUI().year = el.value; render(); return; }
@@ -3536,6 +3567,7 @@ $('#view').addEventListener('click', e => {
   if (UI.view === 'partners') { if (!partnersAction(act, actEl)) viewAction(act, actEl, e); return; }
   if (UI.view === 'orders') { if (!ordersAction(act, actEl, e)) viewAction(act, actEl, e); return; }
   if (UI.view === 'suppliers') { if (!suppliersAction(act, actEl)) viewAction(act, actEl, e); return; }
+  if (UI.view === 'profit') { if (!profAction(act, actEl)) viewAction(act, actEl, e); return; }
   if (UI.view === 'collect') { e.preventDefault && actEl.tagName === 'A' && e.preventDefault(); if (!collectAction(act, actEl)) viewAction(act, actEl, e); return; }
   if (['main', 'settings', 'anomalies', 'alerts'].includes(UI.view)) { viewAction(act, actEl, e); return; }
   if (String(UI.view).startsWith('person:')) { personAction(act, actEl, e); return; }
@@ -6277,7 +6309,7 @@ function tabPeriodAction(act, el, t) {
 /* ---------------- ניווט: חזרה למסך הקודם ---------------- */
 function navValid(v) {
   if (!v) return false;
-  if (['main', 'settings', 'anomalies', 'alerts', 'partners', 'collect', 'orders', 'billing', 'suppliers'].includes(v)) return true;
+  if (['main', 'settings', 'anomalies', 'alerts', 'partners', 'collect', 'orders', 'billing', 'suppliers', 'profit'].includes(v)) return true;
   if (String(v).startsWith('person:')) return !!personByKey(String(v).slice(7));
   return !!tabInfo(v);
 }
@@ -6287,6 +6319,7 @@ function viewName(v) {
   if (v === 'anomalies') return 'אנומליות';
   if (v === 'partners') return 'שותפים';
   if (v === 'suppliers') return 'ספקים – מאזן';
+  if (v === 'profit') return 'רווחיות עובדים';
   if (v === 'collect') return 'דשבורד גבייה';
   if (v === 'orders') return 'הזמנות משהב״ט';
   if (v === 'billing') return 'הגשות חודשיות';
@@ -8350,6 +8383,121 @@ function suppliersAction(act, el) {
     const body = [];
     supplierData(U.year).forEach(g => g.rows.forEach(x => body.push([g.name, x.e.client || '', x.e.type === 'mod' ? 'משהב״ט' : 'יזם', pad2(x.row.month || '') + '/' + (x.row.year || ''), x.e.name, num(x.row.supplierPct), fmtDate(x.row.submitted), x.c.total, fmtDate(x.c.moneyDate), x.pay, x.row.supplierDocNo || '', fmtDate(x.c.supplierPayDate), x.done ? 'שולם' : x.recv ? 'מגיע עכשיו' : 'אחרי קבלת הכסף'])));
     exportExcel('ספקים – מאזן' + (U.year ? ' ' + U.year : ''), head, body);
+    return true;
+  }
+  return false;
+}
+
+/* =====================================================================
+   רווחיות עובדים: כמה הכניס כל עובד שכיר מול כמה הוא עלה לחברה
+   הכנסה = שורות החוצצים המשויכים לעובד (ללא מע״מ, אחרי חלק ספק אם יש)
+   עלות = עלות מעביד מחוצץ המשכורות (ברוטו + הפרשות מעסיק לפנסיה, פיצויים וקה״ל)
+   ===================================================================== */
+function profUI() { return UI.prof || (UI.prof = { year: '', open: {} }); }
+function profLinks() { const st = S.settings; if (!st.empProjects || typeof st.empProjects !== 'object') st.empProjects = {}; return st.empProjects; }
+function profTabsOf(emp) {
+  const ov = profLinks()[emp.id];
+  if (Array.isArray(ov)) return ov.filter(id => S.entities[id]);
+  return S.entityOrder.filter(id => { const e = S.entities[id]; return e && PROJECT_TYPES.includes(e.type) && samePerson(e.name, emp.name); });
+}
+function profRowIncome(type, row, c) {
+  const vat = nz(row.vatPct);
+  const ex = type === 'mod' ? nz(c.preVat) : nz(c.netAdj);
+  const sup = c.supplierOn ? nz(c.supplierPay) / (1 + vat / 100) : 0;
+  return r2(ex - sup);
+}
+function profData(year) {
+  const out = [];
+  for (const emp of S.employees) {
+    if (emp.archived) continue;
+    const months = {};
+    const M = ym => months[ym] || (months[ym] = { ym, hours: 0, income: 0, cost: 0, est: false, rows: 0, sal: false });
+    const tabs = profTabsOf(emp);
+    for (const id of tabs) {
+      const e = S.entities[id];
+      for (const row of e.rows || []) {
+        if (!row.year || !row.month || (year && String(row.year) !== year)) continue;
+        const c = calcRow(e.type, row), m = M(row.year + '-' + pad2(row.month));
+        m.income = r2(m.income + profRowIncome(e.type, row, c)); m.rows++;
+        if (e.type === 'mod') m.hours = r2(m.hours + nz(row.hours));
+      }
+    }
+    for (const row of S.ops.salaries.rows) {
+      if (row.employeeId !== emp.id || !row.year || !row.month || (year && String(row.year) !== year)) continue;
+      const c = calcRow('salaries', row), m = M(row.year + '-' + pad2(row.month));
+      let cost = c.employerCost;
+      if (!nz(row.grossTotal)) { cost = r2(nz(row.net) + nz(c.funds)); m.est = true; }
+      m.cost = r2(m.cost + cost); m.sal = true;
+    }
+    const list = Object.values(months).sort((a, b) => b.ym.localeCompare(a.ym));
+    const s = k => r2(list.reduce((t, m) => t + m[k], 0));
+    const g = { emp, tabs, months: list, hours: s('hours'), income: s('income'), cost: s('cost'), est: list.some(m => m.est) };
+    g.profit = r2(g.income - g.cost);
+    g.margin = g.income ? Math.round(g.profit / g.income * 100) : null;
+    g.perHour = g.hours ? r2(g.profit / g.hours) : null;
+    if (list.length) out.push(g);
+  }
+  return out;
+}
+function profYears() {
+  const ys = new Set(S.ops.salaries.rows.map(r => String(r.year || '')).filter(Boolean));
+  return [...ys].sort().reverse();
+}
+function renderProfit(v) {
+  const U = profUI(), all = profData(U.year);
+  const billed = all.filter(g => g.tabs.length).sort((a, b) => b.profit - a.profit);
+  const other = all.filter(g => !g.tabs.length).sort((a, b) => a.emp.name.localeCompare(b.emp.name, 'he'));
+  const sum = (arr, k) => r2(arr.reduce((t, g) => t + g[k], 0));
+  const inc = sum(billed, 'income'), cost = sum(billed, 'cost'), pr = r2(inc - cost);
+  const pc = n => n === null ? '—' : '<span style="color:' + (n < 0 ? 'var(--red)' : n < 15 ? 'var(--warn)' : 'var(--green)') + '">' + n + '%</span>';
+  const mny = n => '<span style="' + (n < 0 ? 'color:var(--red);font-weight:700' : '') + '">' + fmtMoney(n) + '</span>';
+  let h = '<div class="crumb">' + backBtnHTML() + '<h2>📈 רווחיות עובדים</h2><span class="meta">כמה כל עובד שכיר הכניס מול כמה הוא עלה לחברה · לפי חודש העבודה · סכומים ללא מע״מ</span></div>';
+  h += '<div class="stats">' + statHTML('עובדים מחויבים', billed.length) + statHTML('הכנסה מעבודתם', fmtMoney(inc), 'gold') + statHTML('עלות מעביד', fmtMoney(cost), 'red') +
+    statHTML('רווח', mny(pr), 'green') + statHTML('אחוז רווח', pc(inc ? Math.round(pr / inc * 100) : null)) + '</div>';
+  h += '<div class="toolbar"><label class="pl" style="font-size:13px">שנת עבודה <select data-prof="year"><option value="">כל השנים</option>' + profYears().map(y => '<option' + (y === U.year ? ' selected' : '') + '>' + y + '</option>').join('') + '</select></label><span class="grow" style="flex:1"></span><button class="btn" data-act="profxlsx">📗 Excel</button></div>';
+  const head = '<tr><th></th><th>עובד</th><th>פרויקטים משויכים</th><th>חודשים</th><th>שעות שחויבו</th><th>הכנסה</th><th>עלות מעביד</th><th>רווח</th><th>% רווח</th><th>רווח לשעה</th><th></th></tr>';
+  const rowHTML = g => {
+    const open = !!U.open[g.emp.id];
+    let r = '<tr class="coll-click" data-act="proftoggle" data-emp="' + g.emp.id + '"><td style="width:22px">' + (open ? '▾' : '▸') + '</td><td><b>' + esc(g.emp.name) + '</b></td>' +
+      '<td class="muted">' + (g.tabs.length ? g.tabs.map(id => esc(S.entities[id].name) + ' · ' + esc(S.entities[id].client || TYPE_LABEL[S.entities[id].type])).join('<br>') : 'לא משויך') + '</td>' +
+      '<td class="num">' + g.months.length + '</td><td class="num">' + (g.hours ? fmtNum(g.hours) : '—') + '</td><td class="num">' + fmtMoney(g.income) + '</td>' +
+      '<td class="num">' + (g.est ? '≈ ' : '') + fmtMoney(g.cost) + '</td><td class="num"><b>' + mny(g.profit) + '</b></td><td class="num">' + pc(g.margin) + '</td>' +
+      '<td class="num">' + (g.perHour === null ? '—' : mny(g.perHour)) + '</td><td><button class="btn sm" data-act="proflink" data-emp="' + g.emp.id + '" title="בחירת החוצצים שההכנסה שלהם שייכת לעובד">🔗 שיוך</button></td></tr>';
+    if (open) r += '<tr><td></td><td colspan="10" style="padding:6px 0 12px"><table class="simple" style="font-size:12.5px"><tr><th>חודש עבודה</th><th>שעות</th><th>הכנסה</th><th>עלות מעביד</th><th>רווח</th><th>% רווח</th><th>הערה</th></tr>' +
+      g.months.map(m => { const p = r2(m.income - m.cost); const note = !m.sal ? 'אין משכורת לחודש הזה' : !m.rows ? 'אין חשבון ללקוח לחודש הזה' : m.est ? 'עלות משוערת – חסר ברוטו בתלוש' : '';
+        return '<tr><td>' + m.ym.slice(5) + '/' + m.ym.slice(0, 4) + '</td><td class="num">' + (m.hours ? fmtNum(m.hours) : '—') + '</td><td class="num">' + fmtMoney(m.income) + '</td><td class="num">' + (m.est ? '≈ ' : '') + fmtMoney(m.cost) + '</td><td class="num"><b>' + mny(p) + '</b></td><td class="num">' + pc(m.income ? Math.round(p / m.income * 100) : null) + '</td><td class="' + (note ? 'muted' : '') + '" style="' + (!m.rows && m.sal ? 'color:var(--red)' : '') + '">' + esc(note) + '</td></tr>'; }).join('') + '</table></td></tr>';
+    return r;
+  };
+  h += '<div class="setting-card"><div class="coll-wrap"><table class="simple">' + head;
+  h += billed.length ? billed.map(rowHTML).join('') : '<tr><td colspan="11" class="muted" style="text-align:center;padding:18px">אין עובדים עם הכנסה משויכת. עובד משויך אוטומטית לחוצץ פרויקט באותו שם, או בכפתור 🔗 שיוך.</td></tr>';
+  if (billed.length) h += '<tr class="pt-tot"><td></td><td colspan="4"><b>סה״כ</b></td><td class="num"><b>' + fmtMoney(inc) + '</b></td><td class="num">' + fmtMoney(cost) + '</td><td class="num"><b>' + mny(pr) + '</b></td><td class="num">' + pc(inc ? Math.round(pr / inc * 100) : null) + '</td><td colspan="2"></td></tr>';
+  h += '</table></div>';
+  if (other.length) h += '<h4 style="margin:16px 0 6px">עובדים בלי הכנסה משויכת <span class="muted" style="font-weight:400">(עלות בלבד – למשל עבודה במשרד, או שצריך לשייך חוצץ)</span></h4><div class="coll-wrap"><table class="simple">' + head + other.map(rowHTML).join('') + '</table></div>';
+  h += '<div class="hint muted" style="margin-top:8px;line-height:1.7"><b>הכנסה</b> = מה שחויב הלקוח על עבודת העובד, ללא מע״מ, ואחרי חלק הספק אם יש. <b>עלות מעביד</b> = ברוטו + הפרשות מעסיק לפנסיה, פיצויים וקרן השתלמות, מחוצץ המשכורות. ' +
+    'ההשוואה לפי <b>חודש העבודה</b> (חשבון ספטמבר מול משכורת ספטמבר). עלויות נוספות כמו רכב, ציוד ומשרד אינן נכללות. עובד משויך אוטומטית לחוצץ פרויקט שנקרא בשמו; אפשר לשנות בכפתור 🔗 שיוך.</div></div>';
+  v.innerHTML = h;
+}
+function profLinkModal(empId) {
+  const emp = empById(empId); if (!emp) return;
+  const cur = new Set(profTabsOf(emp));
+  const tabs = S.entityOrder.filter(id => S.entities[id] && PROJECT_TYPES.includes(S.entities[id].type));
+  openModal({
+    title: 'שיוך פרויקטים – ' + emp.name,
+    body: '<p class="muted" style="margin-top:0">סמן את החוצצים שההכנסה שלהם היא מעבודה של ' + esc(emp.name) + '.</p><div class="col-pick">' +
+      tabs.map(id => { const e = S.entities[id]; return '<label class="cp-row"><input type="checkbox" data-pl="' + id + '"' + (cur.has(id) ? ' checked' : '') + '><span class="cp-name">' + esc(e.name) + '</span><span class="cp-note">' + esc(e.client || TYPE_LABEL[e.type]) + '</span></label>'; }).join('') + '</div>',
+    wide: true,
+    buttons: [{ label: 'שמירה', cls: 'primary', onClick: bg => { profLinks()[empId] = $$('[data-pl]', bg).filter(i => i.checked).map(i => i.dataset.pl); markDirty(); render(); toast('השיוך נשמר', 'ok'); } },
+      { label: 'חזרה לשיוך אוטומטי (לפי שם)', onClick: () => { delete profLinks()[empId]; markDirty(); render(); } }, { label: 'ביטול' }]
+  });
+}
+function profAction(act, el) {
+  const U = profUI();
+  if (act === 'proftoggle') { U.open[el.dataset.emp] = !U.open[el.dataset.emp]; render(); return true; }
+  if (act === 'proflink') { profLinkModal(el.dataset.emp); return true; }
+  if (act === 'profxlsx') {
+    const body = [];
+    profData(U.year).forEach(g => g.months.forEach(m => body.push([g.emp.name, g.tabs.map(id => S.entities[id].name).join(', '), m.ym.slice(5) + '/' + m.ym.slice(0, 4), m.hours, m.income, m.cost, r2(m.income - m.cost)])));
+    exportExcel('רווחיות עובדים' + (U.year ? ' ' + U.year : ''), ['עובד', 'פרויקטים', 'חודש עבודה', 'שעות', 'הכנסה ללא מע״מ', 'עלות מעביד', 'רווח'], body);
     return true;
   }
   return false;
