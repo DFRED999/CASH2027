@@ -105,6 +105,18 @@ input,select,textarea{font-family:inherit;font-size:13px}
 .sb-top-h .sb-count{margin-inline-start:4px}
 .sb-top-h .badge{margin:0}
 .sb-top > .sb-children{padding-right:10px;border-right:2px solid var(--lav2);margin:2px 12px 6px 0}
+
+/* ---- עבודה חודשית: רשימה שטוחה ובולטת (ללא קבוצה מתקפלת) ---- */
+.sb-hotlist{margin:8px 0 6px;padding:8px;border-radius:12px;background:var(--gold-soft);border:1.5px solid var(--gold);display:flex;flex-direction:column;gap:5px}
+.sb-item.sb-hot{background:#fff;border:1.5px solid #e4d8a5;font-size:15px;font-weight:800;color:var(--navy);padding:10px 11px;box-shadow:0 1px 3px rgba(20,33,61,.12)}
+.sb-item.sb-hot:hover{background:#fffdf3;border-color:var(--gold)}
+.sb-item.sb-hot.active{background:var(--navy);color:#fff;border-color:var(--navy)}
+.sb-hot .hot-ico{font-size:18px;line-height:1}
+.sb-hot .hot-label{flex:1}
+.sb-hot .hot-count{margin-inline-start:auto;min-width:24px;text-align:center;padding:1px 8px;border-radius:999px;background:var(--navy);color:#fff;font-size:12.5px;font-weight:800}
+.sb-hot .hot-count.alert{background:var(--red)}
+.sb-item.sb-hot.active .hot-count{background:var(--gold);color:var(--navy)}
+.sb-item.sb-hot.active .hot-count.alert{background:var(--red);color:#fff}
 .sb-foot{display:flex;gap:4px}
 .sb-foot .sb-item{flex:1;justify-content:center;font-size:12.5px;padding:7px 6px;color:var(--muted)}
 .sb-foot .sb-item.active{color:#fff}
@@ -2532,7 +2544,10 @@ function renderSidebar() {
   };
   h += item('main', '📊 גיליון ראשי – תזרים') + item('alerts', '🔔 מרכז התראות', alertCount() || undefined);
   const bb = billingBadge();
-  h += topGrp('work', '🗓 עבודה חודשית', item('billing', '🧾 הגשות חודשיות', bb || undefined) + item('collect', '📋 דשבורד גבייה', collectRows().length || undefined) + item('orders', '📑 הזמנות משהב״ט'), bb);
+  // עבודה חודשית – פורקה מקבוצה מתקפלת לרשימה שטוחה ובולטת (v-flat)
+  const hot = (id, ico, label, count, alert) => '<div class="sb-item sb-hot' + (UI.view === id ? ' active' : '') + '" data-nav="' + id + '"><span class="hot-ico">' + ico + '</span><span class="hot-label">' + esc(label) + '</span>' +
+    (count ? '<span class="hot-count' + (alert ? ' alert' : '') + '"' + (alert ? ' title="דורש טיפול"' : '') + '>' + count + '</span>' : '') + '</div>';
+  h += '<div class="sb-hotlist">' + hot('billing', '🧾', 'הגשות חודשיות', bb || undefined, true) + hot('collect', '📋', 'דשבורד גבייה', collectRows().length || undefined, false) + hot('orders', '📑', 'הזמנות משהב״ט') + '</div>';
   let proj = '';
   for (const type of PROJECT_TYPES) {
     const ids = S.entityOrder.filter(id => S.entities[id].type === type);
@@ -2603,7 +2618,6 @@ $('#sidebar').addEventListener('click', e => {
 
 function sbGroupOf(v) {
   v = String(v || '');
-  if (['billing', 'collect', 'orders'].includes(v)) return 'work';
   if (['partners', 'suppliers', 'profit'].includes(v)) return 'an';
   if (v.startsWith('ops:')) return 'ops';
   if (v.startsWith('person:')) return 'hr';
