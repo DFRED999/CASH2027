@@ -6408,7 +6408,7 @@ function syncCfgUpgrade(cfg) {
 const Sync = {
   cfg: null, db: null, auth: null, user: null,
   on: false, state: 'off', err: '', last: null,
-  unsub: null, pushTimer: null, sent: {}, rev: {}, busy: false, deviceId: ''
+  unsub: null, pushTimer: null, sent: {}, rev: {}, w: {}, busy: false, deviceId: ''
 };
 
 function syncDeviceId() {
@@ -6487,6 +6487,12 @@ function syncPack(obj) {
   for (let i = 0; i < s.length; i += SYNC_CHUNK) parts.push(s.slice(i, i + SYNC_CHUNK));
   return parts.length ? parts : [''];
 }
+/* ---------- הגנת "התכווצות" ----------
+   יחידה שהתכווצה ליותר ממחצית מגודלה (ובעלת תוכן ממשי) אף פעם לא דורסת את הצד השני
+   אוטומטית – גם לא בדחיפה, גם לא בקבלה, גם לא במחיקת חוצץ. הצד הגדול מנצח ומתקן את הקטן. */
+function syncW(parts) { let n = 0; for (const x of (parts || [])) n += String(x).length; return n; }
+function syncShrunk(oldW, newW) { return oldW > 1500 && newW < oldW * 0.5; }
+function syncWarn(msg) { try { toast('🛡 ' + msg, 'warn', 12000); } catch (e) { } }
 function syncUnpack(d) {
   try { return JSON.parse((d && d.p ? d.p : ['null']).join('')); } catch (e) { return null; }
 }
@@ -6713,6 +6719,7 @@ async function syncStart() {
   else {
     /* מיזוג אוטומטי: לכל חוצץ בנפרד מנצח הצד שעודכן לאחרונה.
        אין שאלה למשתמש ואין דריסה גורפת של צד שלם. */
+    await syncDailyBackup(snap);
     syncStamp();
     const cloud = {};
     snap.forEach(d => { const v = d.val() || {}; cloud[d.key] = { h: hashStr((v.p || []).join('')), rev: nz(v.rev), snap: d }; });
@@ -6725,6 +6732,9 @@ async function syncStart() {
       if (c && !hasL) { pull.push(id); continue; }
       if (!c && hasL) { push.push(id); continue; }
       if (c.h === localH[id]) continue;               // זהה – אין מה לעשות
+      const cW = syncW((snap.child(id).val() || {}).p), lW = syncW(syncPack(units[id]));
+      if (syncShrunk(lW, cW)) { push.push(id); continue; }      // הענן התכווץ – המכשיר מתקן
+      if (syncShrunk(cW, lW)) { pull.push(id); continue; }      // המכשיר התכווץ – מקבלים מהענן
       (c.rev > syncUnitMtime(id) ? pull : push).push(id);
     }
     if (pull.length) syncPreSave({ pulled: pull.length, pushed: push.length });
@@ -6736,6 +6746,7 @@ async function syncStart() {
     }
     for (const id of Object.keys(cloud)) if (!pull.includes(id) && (id in localH)) { Sync.rev[id] = cloud[id].rev; Sync.sent[id] = cloud[id].h; }
     if (pull.length) { S = normalizeState(S); saveNow(true); }
+    snap.forEach(d => { Sync.w[d.key] = syncW((d.val() || {}).p); });
     Sync.busy = false;
     Sync.on = true;
     if (push.length) await syncPushNow(true);
@@ -6765,13 +6776,27 @@ async function syncStart() {
   syncBaselineSave();
   syncSetState('on');
 }
+async function syncDailyBackup(snap) {
+  try {
+    const day = new Date().toISOString().slice(0, 10);
+    const ref = Sync.db.ref('atlas/' + (syncShared() ? syncSpace() : Sync.user.uid) + '/backups/' + day);
+    const ex = await ref.once('value');
+    if (ex.exists()) return;
+    let w = 0; snap.forEach(d => { w += syncW((d.val() || {}).p); });
+    if (w < 3000) return;                      // לא מגבים מצב ריק
+    const o = {}; snap.forEach(d => { o[d.key] = d.val(); });
+    await ref.set(o);
+    const all = await ref.parent.once('value'); const keys = []; all.forEach(d => { keys.push(d.key); });
+    keys.sort(); while (keys.length > 14) await ref.parent.child(keys.shift()).remove();
+  } catch (e) { /* אם הכללים לא מאפשרים – ממשיכים בלי */ }
+}
 function syncPullSnap(snap) {
   Sync.busy = true;
   S = defaultState();
   snap.forEach(d => {
     const id = d.key, data = d.val() || {};
     syncApplyUnit(id, syncUnpack(data));
-    Sync.rev[id] = data.rev || 0;
+    Sync.rev[id] = data.rev || 0; Sync.w[id] = syncW(data.p);
     Sync.sent[id] = hashStr((data.p || []).join(''));
   });
   S = normalizeState(S);
@@ -6782,13 +6807,16 @@ function syncPullSnap(snap) {
 function syncOnChild(type, snap) {
   if (!Sync.on) return;
   const id = snap.key, d = snap.val() || {};
+  const lu = syncUnits()[id];
   if (type === 'removed') {
+    if (lu !== undefined && syncW(syncPack(lu)) > 1500) { delete Sync.sent[id]; syncWarn('חוצץ נמחק בענן ממכשיר אחר – לא נמחק כאן. הוא יוחזר לענן.'); syncSchedulePush(); return; }
     syncDropUnit(id); delete Sync.rev[id]; delete Sync.sent[id];
   } else {
     if (d.by === syncDeviceId()) { Sync.rev[id] = d.rev; Sync.sent[id] = hashStr((d.p || []).join('')); return; }
     if (Sync.rev[id] && d.rev <= Sync.rev[id]) return;
+    if (lu !== undefined && syncShrunk(syncW(syncPack(lu)), syncW(d.p))) { delete Sync.sent[id]; syncWarn('הענן התרוקן/התכווץ בחוצץ – העדכון נחסם והנתונים כאן מוגנים. בדוק לפני שממשיכים.'); syncSchedulePush(); return; }
     syncApplyUnit(id, syncUnpack(d));
-    Sync.rev[id] = d.rev;
+    Sync.rev[id] = d.rev; Sync.w[id] = syncW(d.p);
     Sync.sent[id] = hashStr((d.p || []).join(''));
   }
   S = normalizeState(S);
@@ -6816,16 +6844,17 @@ async function syncPushNow(all) {
     const parts = syncPack(units[id]);
     const h = hashStr(parts.join(''));
     if (!all && Sync.sent[id] === h) continue;
+    if (Sync.w[id] && syncShrunk(Sync.w[id], syncW(parts))) { syncWarn('נחסמה שליחה שהייתה מקטינה משמעותית חוצץ בענן (' + id + '). הנתונים בענן נשמרו.'); continue; }
     put.push({ id, parts, h });
   }
-  const gone = Object.keys(Sync.sent).filter(id => !(id in units));
+  const gone = [];   /* מחיקת חוצצים בענן הושבתה אוטומטית – רק ידנית */
   if (!put.length && !gone.length) return;
   syncSetState('push');
   try {
     for (const it of put) {
       const rev = Date.now();
       await col.child(it.id).set({ p: it.parts, rev, by: syncDeviceId() });
-      Sync.sent[it.id] = it.h; Sync.rev[it.id] = rev;
+      Sync.sent[it.id] = it.h; Sync.rev[it.id] = rev; Sync.w[it.id] = syncW(it.parts);
     }
     for (const id of gone) { await col.child(id).remove(); delete Sync.sent[id]; delete Sync.rev[id]; }
     Sync.last = new Date();
@@ -8890,7 +8919,7 @@ function renderSettings(v) {
       '<div class="toolbar"><button class="btn gold" data-act="fsconnect">📁 ' + (DocFS.roots.length ? 'הוספת תיקייה…' : 'חיבור תיקייה…') + '</button>' + (DocFS.roots.length ? '<button class="btn" data-act="fstest">בדיקת כתיבה</button><button class="btn danger" data-act="fsdisconnect">ניתוק הכול</button>' : '') + '</div>') + '</div>';
   h += '<div class="setting-card"><h3>שמירה, גיבוי ושחזור</h3><div class="kv" style="margin-bottom:10px"><div>מנגנון שמירה</div><div>' + Storage.name + ' (מופרד מקוד האתר)</div><div>נשמר לאחרונה</div><div>' + (S.savedAt ? new Date(S.savedAt).toLocaleString('he-IL') : '—') + '</div>' +
     '<div>פרויקטי יזם / משהב״ט / עצמאיים</div><div>' + counts.yazam + ' / ' + counts.mod + ' / ' + counts.freelancer + '</div><div>עובדים</div><div>' + S.employees.length + '</div><div>קישורי מסמכים</div><div>' + Object.keys(S.docs).length + '</div></div>' +
-    '<div class="toolbar"><button class="btn gold" data-act="save">💾 שמירה ואימות</button><button class="btn" data-act="backup">⬇ הורדת גיבוי JSON מלא</button><button class="btn" data-act="restore">⬆ טעינת JSON…</button></div></div>';
+    '<div class="toolbar"><button class="btn gold" data-act="save">💾 שמירה ואימות</button><button class="btn" data-act="backup">⬇ הורדת גיבוי JSON מלא</button><button class="btn" data-act="restore">⬆ טעינת JSON…</button></div></div>' + AutoBk.card();
 
   h += syncCardHTML();
   h += '<div class="setting-card"><h3>נתוני בדיקה (שלב ב׳)</h3><p class="muted">יוצר חוצץ לדוגמה מכל סוג ושורות תפעול מסומנות 🧪 לבדיקת החישובים, התזרים והסינון. ניתן להסיר אותם בלחיצה בלי לפגוע בנתונים אחרים.</p>' +
@@ -8913,6 +8942,9 @@ function settingsAction(act, el) {
     case 'save': saveNow(false); break;
     case 'backup': doBackup(); break;
     case 'restore': $('#restoreFile').click(); break;
+    case 'autobkchoose': AutoBk.choose(); break;
+    case 'autobkgrant': AutoBk.handle.requestPermission({ mode: 'readwrite' }).then(p => { AutoBk.perm = p; return AutoBk.runIfDue(); }).then(() => render()); break;
+    case 'autobknow': AutoBk.runIfDue(true).then(() => render()); break;
     case 'banksettings': $('#bankFeeCard') && $('#bankFeeCard').scrollIntoView(); break;
     case 'bfsave': {
       const bf = S.settings.bankFee;
@@ -10118,6 +10150,69 @@ function gateClick(e) {
   }
 }
 
+
+/* ---------------- גיבוי יומי אוטומטי לתיקייה במחשב ----------------
+   נתמך ב-Chrome/Edge במחשב (File System Access). בוחרים תיקייה פעם אחת; בכל יום שהאתר נפתח
+   נכתב קובץ ATLAS_backup_YYYY-MM-DD.json. לעולם לא נמחק ולא נדרס קובץ קיים.
+   מצב שהתכווץ ביותר ממחצית ביחס לגיבוי האחרון נשמר בשם _חשוד ומציג אזהרה. */
+const AutoBk = {
+  DB: 'atlas_autobk', handle: null, perm: 'none', last: null,
+  supported() { return typeof window.showDirectoryPicker === 'function'; },
+  idb() { return new Promise((res, rej) => { const r = indexedDB.open(this.DB, 1); r.onupgradeneeded = () => r.result.createObjectStore('kv'); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }); },
+  async kvGet(k) { const d = await this.idb(); return new Promise(res => { const q = d.transaction('kv').objectStore('kv').get(k); q.onsuccess = () => res(q.result); q.onerror = () => res(null); }); },
+  async kvSet(k, v) { const d = await this.idb(); return new Promise(res => { const t = d.transaction('kv', 'readwrite'); t.objectStore('kv').put(v, k); t.oncomplete = () => res(true); t.onerror = () => res(false); }); },
+  async init() {
+    if (!this.supported()) return;
+    try {
+      this.handle = await this.kvGet('dir'); this.last = await this.kvGet('last');
+      if (this.handle) { this.perm = await this.handle.queryPermission({ mode: 'readwrite' }); if (this.perm === 'granted') await this.runIfDue(); else this.needGrant(); }
+    } catch (e) { }
+  },
+  needGrant() {
+    if (this._wired) return; this._wired = true;
+    try { toast('גיבוי יומי: לחץ בכל מקום במסך כדי לאשר שוב גישה לתיקיית הגיבוי', 'warn', 9000); } catch (e) { }
+    const h = async () => {
+      try { this.perm = await this.handle.requestPermission({ mode: 'readwrite' }); } catch (e) { return; }
+      if (this.perm === 'granted') { document.removeEventListener('click', h, true); await this.runIfDue(); try { render(); } catch (e) { } }
+    };
+    document.addEventListener('click', h, true);
+  },
+  async choose() {
+    try {
+      const dir = await window.showDirectoryPicker({ mode: 'readwrite', id: 'atlasbackup' });
+      this.handle = dir; this.perm = 'granted'; await this.kvSet('dir', dir);
+      await this.runIfDue(true); render();
+    } catch (e) { if (e && e.name !== 'AbortError') toast('בחירת התיקייה נכשלה: ' + e.message, 'warn'); }
+  },
+  weight(st) { try { return JSON.stringify(st).length; } catch (e) { return 0; } },
+  async runIfDue(force) {
+    if (!this.handle || this.perm !== 'granted') return;
+    const day = new Date().toISOString().slice(0, 10);
+    if (!force && this.last && this.last.day === day) return;
+    const w = this.weight(S);
+    if (w < 3000 && !(this.last && this.last.w < 3000)) { toast('גיבוי יומי דולג: המצב הנוכחי ריק כמעט לגמרי', 'warn', 9000); return; }
+    const suspect = this.last && this.last.w > 3000 && w < this.last.w * 0.5;
+    const base = 'ATLAS_backup_' + day + (suspect ? '_חשוד' : '');
+    let name = base + '.json', n = 1;
+    for (; ;) { try { await this.handle.getFileHandle(name); name = base + '_' + (++n) + '.json'; } catch (e) { break; } }
+    try {
+      const f = await this.handle.getFileHandle(name, { create: true }), wr = await f.createWritable();
+      await wr.write(JSON.stringify(S, null, 1)); await wr.close();
+      this.last = { day, w, name, at: new Date().toISOString() }; await this.kvSet('last', this.last);
+      toast(suspect ? '⚠ המצב קטן בהרבה מהגיבוי האחרון – נשמר בשם "חשוד": ' + name : '💾 גיבוי יומי נשמר בתיקייה: ' + name, suspect ? 'warn' : 'ok', suspect ? 15000 : 4000);
+    } catch (e) { toast('גיבוי יומי נכשל: ' + e.message, 'warn', 9000); }
+  },
+  card() {
+    if (!this.supported()) return '<div class="setting-card"><h3>גיבוי יומי לתיקייה</h3><p class="muted">הדפדפן הזה לא תומך בשמירה אוטומטית לתיקייה. פתח את האתר ב-Chrome או Edge במחשב, או השתמש ב"הורדת גיבוי JSON מלא".</p></div>';
+    const st = this.handle ? (this.perm === 'granted' ? '✓ פעיל – תיקייה: <b>' + esc(this.handle.name) + '</b>' : 'התיקייה נבחרה – לחץ "אשר גישה"') : 'לא הוגדר';
+    return '<div class="setting-card"><h3>גיבוי יומי לתיקייה במחשב</h3><div class="kv" style="margin-bottom:10px"><div>סטטוס</div><div>' + st + '</div><div>גיבוי אחרון</div><div>' + (this.last ? esc(this.last.name) : '—') + '</div></div>' +
+      '<div class="toolbar"><button class="btn gold" data-act="autobkchoose">📁 בחירת תיקייה</button>' +
+      (this.handle && this.perm !== 'granted' ? '<button class="btn" data-act="autobkgrant">🔓 אשר גישה</button>' : '') +
+      (this.handle && this.perm === 'granted' ? '<button class="btn" data-act="autobknow">💾 גבה עכשיו</button>' : '') + '</div>' +
+      '<p class="muted" style="font-size:12px">בכל יום שהאתר נפתח נשמר קובץ ATLAS_backup_תאריך.json. קבצים לא נמחקים ולא נדרסים.</p></div>';
+  }
+};
+
 /* ---------------- init ---------------- */
 (function init() {
   try {
@@ -10136,6 +10231,8 @@ function gateClick(e) {
   try { billingPopupCheck(); } catch (e) { }
   DocFS.init().then(async found => { if (found) { UI.fsGrant = await DocFS.pendingGrant(); render(); } });
   syncInit();
+  setTimeout(() => AutoBk.init(), 2500);
+  setInterval(() => { try { AutoBk.runIfDue(); } catch (e) { } }, 30 * 60 * 1000);
   setInterval(() => { if (ensureBankFees() + ensureCreditRecurring()) { markDirty(); render(); } }, 60 * 60 * 1000);
 })();
 </script>
