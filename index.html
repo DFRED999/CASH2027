@@ -8006,12 +8006,12 @@ function renderPartners(v) {
       shown.forEach(it => {
         const pctCell = it.alloc
           ? '<input data-pt="rowpct" data-key="' + esc(it.allocKey) + '" value="' + esc(P.rowSkip[it.key] ? nz(P.rowPct[it.allocKey] !== undefined ? P.rowPct[it.allocKey] : it.alloc.pct) : it.pct) + '" style="width:46px;direction:ltr;background:#fff2cc">%'
-          : '<span class="muted">100%</span>';
+          : '<span class="muted">' + (it.pass && it.pct === 0 ? '0%' : '100%') + '</span>';
         const del = it.manual ? '<button class="btn sm danger" data-act="ptdelman" data-id="' + esc(it.manual.id) + '">🗑</button>' : '';
         h += '<tr' + (it.skipped ? ' class="pt-skip"' : '') + '><td>' + fmtDate(it.date) + '</td><td>' + esc(it.month) + '</td><td>' + esc(it.kindLabel) + '</td><td class="muted" title="' + esc(it.note || '') + '">' + esc(it.note || '') + '</td>' +
           '<td class="pt-doc">' + (it.manual ? '<input data-pt="mdoc" data-id="' + esc(it.manual.id) + '" value="' + esc(it.doc || '') + '" placeholder="מס׳ מסמך" style="width:84px">' : (it.doc ? esc(it.doc) : '<span class="muted">—</span>')) + '</td>' +
           '<td class="num">' + fmtMoney(it.base) + '</td><td class="num">' + fmtMoney(it.extra, true) + '</td><td class="num">' + fmtMoney(it.cost) + '</td><td>' + pctCell + '</td>' +
-          '<td class="pt-chk"><input type="checkbox" data-pt="rowskip" data-key="' + esc(it.key) + '"' + (it.skipped ? '' : ' checked') + ' title="' + (it.skipped ? 'לא נספר בסה״כ' : 'נספר בסה״כ') + '"></td>' +
+          '<td class="pt-chk"><input type="checkbox" data-pt="' + (it.pass ? 'pass' : 'rowskip') + '" data-key="' + esc(it.key) + '"' + (it.pass ? (it.pct > 0 && !it.skipped ? ' checked' : '') : (it.skipped ? '' : ' checked')) + ' title="' + (it.pass ? (it.pct > 0 && !it.skipped ? 'תשלום מעבר – נספר בסה״כ' : 'תשלום מעבר – לא נספר. סמן כדי לספור') : (it.skipped ? 'לא נספר בסה״כ' : 'נספר בסה״כ')) + '"></td>' +
           '<td class="num"><b>' + fmtMoney(it.counted, true) + '</b></td><td>' + del + '</td></tr>';
       });
       const skipped = x.items.filter(it => it.skipped);
@@ -8067,7 +8067,7 @@ function partnersChange(el) {
     case 'apartner': a.partner = el.value; break;
     case 'apct': { const v = n(); if (v === null) break; a.pct = Math.max(0, Math.min(100, v)); if (a.kind === 'free' && String(freeName(a.ref)).includes('אירה')) P.iraConfirmed = true; break; }
     case 'rowpct': { const v = n(); if (v === null) break; P.rowPct[el.dataset.key] = Math.max(0, Math.min(100, v)); P.iraConfirmed = true; break; }
-    case 'pass': P.passRows[el.dataset.key] = el.checked; break;
+    case 'pass': P.passRows[el.dataset.key] = el.checked; if (el.checked) delete P.rowSkip[el.dataset.key]; break;
     case 'rowskip': { const k2 = el.dataset.key; if (el.checked) delete P.rowSkip[k2]; else P.rowSkip[k2] = true; break; }
     case 'bankrow': P.bankRows[el.dataset.key] = el.checked; break;
     case 'loanInclude': P.loanInclude = el.value === '1'; Object.keys(P.bankRows).forEach(k => { const b = S.ops.bank.rows.find(x => 'bank|' + x.id === k); if (b && /הלוו|הלוא/.test([b.txType, b.description, b.notes].join(' '))) delete P.bankRows[k]; }); break;
