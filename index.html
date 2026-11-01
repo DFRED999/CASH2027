@@ -6561,7 +6561,22 @@ function syncBaselineLoad() {
     return base && base.scope === syncScope() ? base : null;
   } catch (e) { return null; }
 }
+const SYNC_UB_KEY = 'atlas_sync_unitbase_cash2027';
+function syncUnitsBaseLoad() {
+  try { const b = JSON.parse(localStorage.getItem(SYNC_UB_KEY) || 'null'); return b && b.scope === syncScope() && b.u ? b.u : {}; } catch (e) { return {}; }
+}
+function syncUnitsBaseSave() {
+  try {
+    const units = syncUnits(), u = {};
+    for (const id of Object.keys(units)) {
+      const h = hashStr(JSON.stringify(units[id]));
+      if (Sync.sent[id] === h) u[id] = { h, rev: Sync.rev[id] || 0 };   // רק יחידות שבאמת מסונכרנות
+    }
+    localStorage.setItem(SYNC_UB_KEY, JSON.stringify({ scope: syncScope(), u }));
+  } catch (e) { }
+}
 function syncBaselineSave() {
+  syncUnitsBaseSave();
   try {
     localStorage.setItem(SYNC_BASE_KEY, JSON.stringify({
       scope: syncScope(), local: syncLocalFingerprint(), cloud: syncSentFingerprint()
@@ -6725,17 +6740,25 @@ async function syncStart() {
     snap.forEach(d => { const v = d.val() || {}; cloud[d.key] = { h: hashStr((v.p || []).join('')), rev: nz(v.rev), snap: d }; });
     const units = syncUnits(), localH = {};
     for (const id of Object.keys(units)) localH[id] = hashStr(JSON.stringify(units[id]));
-    const pull = [], push = [];
+    const pull = [], push = [], base = syncUnitsBaseLoad();
     const ids = [...new Set(Object.keys(cloud).concat(Object.keys(localH)))];
     for (const id of ids) {
       const c = cloud[id], hasL = id in localH;
       if (c && !hasL) { pull.push(id); continue; }
       if (!c && hasL) { push.push(id); continue; }
       if (c.h === localH[id]) continue;               // זהה – אין מה לעשות
+      /* הכרעה לפי "מה סונכרן בפעם האחרונה" במכשיר הזה – לא לפי שעון.
+         חותמת זמן מזוהמת בשינויים אוטומטיים בפתיחה (ובמכשיר ישן בלי היסטוריה), ולכן לא משמשת לבדה להכרעה. */
+      const B = base[id] ? base[id].h : null;
       const cW = syncW((snap.child(id).val() || {}).p), lW = syncW(syncPack(units[id]));
-      if (syncShrunk(lW, cW)) { push.push(id); continue; }      // הענן התכווץ – המכשיר מתקן
-      if (syncShrunk(cW, lW)) { pull.push(id); continue; }      // המכשיר התכווץ – מקבלים מהענן
-      (c.rev > syncUnitMtime(id) ? pull : push).push(id);
+      if (B === null) {                                 // אין היסטוריה למכשיר: הענן קובע, אלא אם המכשיר גדול בהרבה
+        (lW >= cW * 1.5 && lW > 1500 ? push : pull).push(id); continue;
+      }
+      if (localH[id] === B) { pull.push(id); continue; }   // המכשיר לא שינה מאז הסנכרון האחרון → לוקחים מהענן
+      if (c.h === B) { push.push(id); continue; }          // רק המכשיר שינה → שולחים
+      if (syncShrunk(lW, cW)) { push.push(id); continue; }  // שניהם שינו; הענן התכווץ – המכשיר מתקן
+      if (syncShrunk(cW, lW)) { pull.push(id); continue; }  // שניהם שינו; המכשיר התכווץ – מקבלים
+      (c.rev > syncUnitMtime(id) ? pull : push).push(id);   // עריכה במקביל בשני הצדדים – העדכני יותר, והמצב המקומי נשמר לשחזור
     }
     if (pull.length) syncPreSave({ pulled: pull.length, pushed: push.length });
     Sync.busy = true;
@@ -6749,7 +6772,7 @@ async function syncStart() {
     snap.forEach(d => { Sync.w[d.key] = syncW((d.val() || {}).p); });
     Sync.busy = false;
     Sync.on = true;
-    if (push.length) await syncPushNow(true);
+    if (push.length) await syncPushNow(true, push);
     if (pull.length || push.length) {
       syncStamp();
       render();
@@ -6835,12 +6858,13 @@ function syncSchedulePush() {
   clearTimeout(Sync.pushTimer);
   Sync.pushTimer = setTimeout(() => { syncPushNow().catch(e => syncSetState('err', e.message)); }, 900);
 }
-async function syncPushNow(all) {
+async function syncPushNow(all, only) {
   if (!Sync.on || !Sync.db || !Sync.user) return;
   const col = syncCol();
   const units = syncUnits();
   const put = [];
   for (const id of Object.keys(units)) {
+    if (only && only.indexOf(id) < 0) continue;
     const parts = syncPack(units[id]);
     const h = hashStr(parts.join(''));
     if (!all && Sync.sent[id] === h) continue;
